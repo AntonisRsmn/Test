@@ -1,100 +1,148 @@
-const API_BASE = "https://telematics.oasa.gr/api/";
+const PROXY_BASE = "https://test-4fo1.onrender.com/api";
 let map, busMarker;
 
-async function api(act, p1, p2){
-  const url = `${API_BASE}?act=${act}${p1?`&p1=${p1}`:''}${p2?`&p2=${p2}`:''}`;
-  const res = await fetch(url);
+/* ---------- Helpers ---------- */
+
+function decodeGreek(text) {
+  try {
+    return JSON.parse(`"${text}"`);
+  } catch {
+    return text;
+  }
+}
+
+async function apiCall(query) {
+  const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
+  if (!res.ok) {
+    throw new Error("API error");
+  }
   return res.json();
 }
 
-async function init(){
-  const lines = await api("webGetLines");
-  const lineSelect = document.getElementById("lineSelect");
-  lines.forEach(l=>{
-    const o=document.createElement("option");
-    o.value=l.line_code;
-    o.textContent=l.line_descr;
-    lineSelect.appendChild(o);
-  });
+/* ---------- Init ---------- */
 
-  lineSelect.onchange = loadDirections;
-  document.getElementById("refresh").onclick = updateETA;
+async function init() {
+  try {
+    const lines = await apiCall("act=webGetLines");
+    const lineSelect = document.getElementById("lineSelect");
+    lineSelect.innerHTML = "";
 
-  map = L.map("map").setView([37.98,23.72],13);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+    lines.forEach(line => {
+      const o = document.createElement("option");
+      o.value = line.LineCode;
+      o.textContent = decodeGreek(line.LineDescr);
+      lineSelect.appendChild(o);
+    });
 
-  await loadDirections();
-}
+    lineSelect.onchange = loadDirections;
+    document.getElementById("refresh").onclick = updateETA;
 
-async function loadDirections(){
-  const line = document.getElementById("lineSelect").value;
-  const routes = await api("getRoutesForLine", line);
-  const dirSelect = document.getElementById("dirSelect");
-  dirSelect.innerHTML="";
-  routes.forEach(r=>{
-    const o=document.createElement("option");
-    o.value=r.route_code;
-    o.textContent=r.route_descr;
-    dirSelect.appendChild(o);
-  });
-  dirSelect.onchange = loadStops;
-  await loadStops();
-}
+    map = L.map("map").setView([37.98, 23.72], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19
+    }).addTo(map);
 
-async function loadStops(){
-  const route = document.getElementById("dirSelect").value;
-  const stops = await api("getStopsForRoute", route);
-  const stopSelect = document.getElementById("stopSelect");
-  stopSelect.innerHTML="";
-  stops.forEach(s=>{
-    const o=document.createElement("option");
-    o.value=s.stop_code;
-    o.textContent=s.stop_descr;
-    stopSelect.appendChild(o);
-  });
-  await updateETA();
-}
-
-async function updateETA(){
-  const stop = document.getElementById("stopSelect").value;
-  const arrivals = await api("getStopArrivals", stop);
-  if(arrivals.length){
-    document.getElementById("eta").textContent =
-      `ETA: ${arrivals[0].btime2} λεπτά`;
+    await loadDirections();
+  } catch (err) {
+    console.error(err);
+    alert("Αποτυχία φόρτωσης γραμμών");
   }
+}
 
-  const route = document.getElementById("dirSelect").value;
-  const buses = await api("getBusLocation", route);
-  if(buses.length){
-    const b = buses[0];
-    if(!busMarker){
-      busMarker = L.marker([b.lat,b.lng]).addTo(map);
-    } else {
-      busMarker.setLatLng([b.lat,b.lng]);
+/* ---------- Directions ---------- */
+
+async function loadDirections() {
+  try {
+    const lineCode = document.getElementById("lineSelect").value;
+    const routes = await apiCall(`act=getRoutesForLine&p1=${lineCode}`);
+
+    const dirSelect = document.getElementById("dirSelect");
+    dirSelect.innerHTML = "";
+
+    routes.forEach(r => {
+      const o = document.createElement("option");
+      o.value = r.RouteCode;
+      o.textContent = decodeGreek(r.RouteDescr);
+      dirSelect.appendChild(o);
+    });
+
+    dirSelect.onchange = loadStops;
+    await loadStops();
+  } catch (err) {
+    console.error(err);
+    alert("Αποτυχία φόρτωσης κατευθύνσεων");
+  }
+}
+
+/* ---------- Stops ---------- */
+
+async function loadStops() {
+  try {
+    const routeCode = document.getElementById("dirSelect").value;
+    const stops = await apiCall(`act=getStopsForRoute&p1=${routeCode}`);
+
+    const stopSelect = document.getElementById("stopSelect");
+    stopSelect.innerHTML = "";
+
+    stops.forEach(s => {
+      const o = document.createElement("option");
+      o.value = s.StopCode;
+      o.textContent = decodeGreek(s.StopDescr);
+      stopSelect.appendChild(o);
+    });
+
+    await updateETA();
+  } catch (err) {
+    console.error(err);
+    alert("Αποτυχία φόρτωσης στάσεων");
+  }
+}
+
+/* ---------- ETA & Bus ---------- */
+
+async function updateETA() {
+  try {
+    const stopCode = document.getElementById("stopSelect").value;
+    const arrivals = await apiCall(`act=getStopArrivals&p1=${stopCode}`);
+
+    if (arrivals.length) {
+      document.getElementById("eta").textContent =
+        `ETA: ${arrivals[0].btime2} λεπτά`;
     }
-    map.setView([b.lat,b.lng],14);
+
+    const routeCode = document.getElementById("dirSelect").value;
+    const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
+
+    if (buses.length) {
+      const b = buses[0];
+      if (!busMarker) {
+        busMarker = L.marker([b.lat, b.lng]).addTo(map);
+      } else {
+        busMarker.setLatLng([b.lat, b.lng]);
+      }
+      map.setView([b.lat, b.lng], 14);
+    }
+  } catch (err) {
+    console.error(err);
   }
 }
 
-// 🔧 Mobile Safari fix: disable map interaction when selecting
-const selects = document.querySelectorAll("select");
+/* ---------- Mobile Safari Fix ---------- */
 
-selects.forEach(sel => {
+document.querySelectorAll("select").forEach(sel => {
   sel.addEventListener("focus", () => {
     if (map) {
       map.dragging.disable();
-      map.scrollWheelZoom.disable();
-      map.doubleClickZoom.disable();
       map.touchZoom.disable();
+      map.scrollWheelZoom.disable();
     }
   });
 
   sel.addEventListener("blur", () => {
     if (map) {
       map.dragging.enable();
-      map.scrollWheelZoom.enable();
-      map.doubleClickZoom.enable();
       map.touchZoom.enable();
+      map.scrollWheelZoom.enable();
     }
   });
 });
