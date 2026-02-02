@@ -76,4 +76,27 @@ async function updateETA(){
   }
 }
 
+// 🔧 Mobile Safari fix: disable map interaction when selecting
+const selects = document.querySelectorAll("select");
+
+selects.forEach(sel => {
+  sel.addEventListener("focus", () => {
+    if (map) {
+      map.dragging.disable();
+      map.scrollWheelZoom.disable();
+      map.doubleClickZoom.disable();
+      map.touchZoom.disable();
+    }
+  });
+
+  sel.addEventListener("blur", () => {
+    if (map) {
+      map.dragging.enable();
+      map.scrollWheelZoom.enable();
+      map.doubleClickZoom.enable();
+      map.touchZoom.enable();
+    }
+  });
+});
+
 init();
