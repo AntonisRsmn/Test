@@ -23,7 +23,8 @@ async function apiCall(query) {
 
 async function init() {
   try {
-    const lines = await apiCall("act=webGetLines");
+    const raw = await apiCall("act=webGetLines");
+    const lines = Array.isArray(raw) ? raw : raw.data;
     const lineSelect = document.getElementById("lineSelect");
     lineSelect.innerHTML = "";
 
