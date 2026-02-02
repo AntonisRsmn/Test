@@ -1,13 +1,24 @@
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   background: #f1f5f9;
 }
 
 header {
-  padding: 14px;
-  background: #0f172a;
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.5rem;
 }
 
 .controls {
@@ -16,41 +27,96 @@ header {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  padding: 16px;
   background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .controls select,
 .controls button {
-  padding: 10px;
+  padding: 12px;
   font-size: 16px;
-  border-radius: 10px;
-  border: 1px solid #cbd5f5;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+  background: white;
+  transition: all 0.2s;
+}
+
+.controls select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.controls select:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .controls button {
-  background: #2563eb;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   border: none;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.controls button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.controls button:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
 }
 
 .info {
-  padding: 12px;
+  padding: 16px;
   background: #ffffff;
   z-index: 900;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.info div {
+  margin: 8px 0;
+  font-size: 1rem;
+  color: #334155;
 }
 
 #map {
-  height: 55vh;
-  margin: 10px;
-  border-radius: 12px;
+  height: 50vh;
+  margin: 0;
   z-index: 1;
 }
 
-/* MOBILE FIX */
-@media (max-width: 768px) {
+@media (min-width: 768px) {
   #map {
-    height: 50vh;
+    height: 60vh;
   }
+  
+  .controls {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  
+  .controls select {
+    flex: 1;
+    min-width: 200px;
+  }
+  
+  .controls button {
+    flex: 0 0 auto;
+    min-width: 140px;
+  }
+}
+
+/* Loading animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.loading {
+  animation: pulse 1.5s ease-in-out infinite;
 }

@@ -1,151 +1,317 @@
-const PROXY_BASE = "https://test-4fo1.onrender.com/api";
+const PROXY_BASE = "http://localhost:4000/api";
 let map, busMarker;
 
 /* ---------- Helpers ---------- */
-
 function decodeGreek(text) {
+  if (!text) return "";
   try {
-    return JSON.parse(`"${text}"`);
+    return text.replace(/\\u[\dA-F]{4}/gi, match => 
+      String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16))
+    );
   } catch {
     return text;
   }
 }
 
 async function apiCall(query) {
-  const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
-  if (!res.ok) {
-    throw new Error("API error");
+  try {
+    console.log("API Call:", query);
+    const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    
+    const data = await res.json();
+    console.log("API Response:", data);
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    
+    return data;
+  } catch (err) {
+    console.error("API Call failed:", err);
+    throw err;
   }
-  return res.json();
+}
+
+function setStatus(message, isError = false) {
+  const statusEl = document.getElementById("status");
+  if (statusEl) {
+    statusEl.textContent = `Κατάσταση: ${message}`;
+    statusEl.style.color = isError ? "#dc2626" : "#059669";
+  }
 }
 
 /* ---------- Init ---------- */
-
 async function init() {
   try {
+    setStatus("Φόρτωση γραμμών...");
+    
     const raw = await apiCall("act=webGetLines");
-    const lines = Array.isArray(raw) ? raw : raw.data;
+    const lines = Array.isArray(raw) ? raw : (raw.data || []);
+    
+    if (!lines.length) {
+      throw new Error("Δεν βρέθηκαν γραμμές");
+    }
+    
     const lineSelect = document.getElementById("lineSelect");
-    lineSelect.innerHTML = "";
-
-    lines.forEach(line => {
-      const o = document.createElement("option");
-      o.value = line.LineCode;
-      o.textContent = decodeGreek(line.LineDescr);
-      lineSelect.appendChild(o);
+    lineSelect.innerHTML = '<option value="">-- Επιλέξτε Γραμμή --</option>';
+    
+    lines.sort((a, b) => {
+      const aNum = parseInt(a.LineID) || 0;
+      const bNum = parseInt(b.LineID) || 0;
+      return aNum - bNum;
     });
-
+    
+    lines.forEach(line => {
+      const option = document.createElement("option");
+      option.value = line.LineCode;
+      
+      const lineID = line.LineID || "";
+      const lineDescr = decodeGreek(line.LineDescr) || line.LineDescr || "";
+      option.textContent = lineID ? `${lineID} - ${lineDescr}` : lineDescr;
+      
+      lineSelect.appendChild(option);
+    });
+    
+    lineSelect.disabled = false;
     lineSelect.onchange = loadDirections;
+    
     document.getElementById("refresh").onclick = updateETA;
-
-    map = L.map("map").setView([37.98, 23.72], 13);
+    
+    map = L.map("map").setView([37.9838, 23.7275], 12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
     }).addTo(map);
-
-    await loadDirections();
+    
+    setStatus("Έτοιμο - Επιλέξτε γραμμή");
+    
   } catch (err) {
-    console.error(err);
-    alert("Αποτυχία φόρτωσης γραμμών");
+    console.error("Init error:", err);
+    setStatus("Αποτυχία φόρτωσης - Δοκιμάστε ξανά", true);
+    alert("Σφάλμα: " + err.message);
   }
 }
 
 /* ---------- Directions ---------- */
-
 async function loadDirections() {
+  const lineCode = document.getElementById("lineSelect").value;
+  
+  const dirSelect = document.getElementById("dirSelect");
+  const stopSelect = document.getElementById("stopSelect");
+  const refreshBtn = document.getElementById("refresh");
+  
+  if (!lineCode) {
+    dirSelect.disabled = true;
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    dirSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση --</option>';
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Στάση --</option>';
+    return;
+  }
+  
   try {
-    const lineCode = document.getElementById("lineSelect").value;
+    setStatus("Φόρτωση κατευθύνσεων...");
+    
+    dirSelect.innerHTML = '<option value="">Φόρτωση...</option>';
+    dirSelect.disabled = true;
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση πρώτα --</option>';
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    
+    console.log("Loading routes for line:", lineCode);
     const routes = await apiCall(`act=getRoutesForLine&p1=${lineCode}`);
-
-    const dirSelect = document.getElementById("dirSelect");
-    dirSelect.innerHTML = "";
-
-    routes.forEach(r => {
-      const o = document.createElement("option");
-      o.value = r.RouteCode;
-      o.textContent = decodeGreek(r.RouteDescr);
-      dirSelect.appendChild(o);
+    
+    console.log("Routes received:", routes);
+    
+    if (!routes || routes.length === 0) {
+      throw new Error("Δεν βρέθηκαν κατευθύνσεις για αυτή τη γραμμή");
+    }
+    
+    dirSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση --</option>';
+    
+    routes.forEach(route => {
+      const option = document.createElement("option");
+      // ✅ FIXED: Use route_code instead of RouteCode
+      option.value = route.route_code || route.RouteCode;
+      // ✅ FIXED: Use route_descr instead of RouteDescr
+      const routeDescr = decodeGreek(route.route_descr || route.RouteDescr) || "Άγνωστη κατεύθυνση";
+      option.textContent = routeDescr;
+      dirSelect.appendChild(option);
     });
-
+    
+    dirSelect.disabled = false;
     dirSelect.onchange = loadStops;
-    await loadStops();
+    
+    setStatus("Επιλέξτε κατεύθυνση");
+    
   } catch (err) {
-    console.error(err);
-    alert("Αποτυχία φόρτωσης κατευθύνσεων");
+    console.error("Load directions error:", err);
+    dirSelect.innerHTML = '<option value="">Σφάλμα φόρτωσης</option>';
+    dirSelect.disabled = true;
+    setStatus("Αποτυχία φόρτωσης κατευθύνσεων", true);
+    alert("Σφάλμα κατευθύνσεων: " + err.message);
   }
 }
 
 /* ---------- Stops ---------- */
-
 async function loadStops() {
+  const routeCode = document.getElementById("dirSelect").value;
+  const stopSelect = document.getElementById("stopSelect");
+  const refreshBtn = document.getElementById("refresh");
+  
+  if (!routeCode) {
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση πρώτα --</option>';
+    return;
+  }
+  
   try {
-    const routeCode = document.getElementById("dirSelect").value;
+    setStatus("Φόρτωση στάσεων...");
+    
+    stopSelect.innerHTML = '<option value="">Φόρτωση...</option>';
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    
+    console.log("Loading stops for route:", routeCode);
     const stops = await apiCall(`act=getStopsForRoute&p1=${routeCode}`);
-
-    const stopSelect = document.getElementById("stopSelect");
-    stopSelect.innerHTML = "";
-
-    stops.forEach(s => {
-      const o = document.createElement("option");
-      o.value = s.StopCode;
-      o.textContent = decodeGreek(s.StopDescr);
-      stopSelect.appendChild(o);
+    
+    console.log("Stops received:", stops);
+    
+    if (!stops || stops.length === 0) {
+      throw new Error("Δεν βρέθηκαν στάσεις");
+    }
+    
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Στάση --</option>';
+    
+    stops.forEach(stop => {
+      const option = document.createElement("option");
+      // ✅ FIXED: Handle both naming conventions
+      option.value = stop.stop_code || stop.StopCode;
+      const stopDescr = decodeGreek(stop.stop_descr || stop.StopDescr) || "Άγνωστη στάση";
+      option.textContent = stopDescr;
+      stopSelect.appendChild(option);
     });
-
-    await updateETA();
+    
+    stopSelect.disabled = false;
+    refreshBtn.disabled = false;
+    
+    setStatus("Επιλέξτε στάση");
+    
   } catch (err) {
-    console.error(err);
-    alert("Αποτυχία φόρτωσης στάσεων");
+    console.error("Load stops error:", err);
+    stopSelect.innerHTML = '<option value="">Σφάλμα φόρτωσης</option>';
+    stopSelect.disabled = true;
+    setStatus("Αποτυχία φόρτωσης στάσεων", true);
+    alert("Σφάλμα στάσεων: " + err.message);
   }
 }
 
-/* ---------- ETA & Bus ---------- */
-
+/* ---------- ETA & Bus Location ---------- */
 async function updateETA() {
+  const stopCode = document.getElementById("stopSelect").value;
+  
+  if (!stopCode) {
+    alert("Παρακαλώ επιλέξτε στάση πρώτα");
+    return;
+  }
+  
   try {
-    const stopCode = document.getElementById("stopSelect").value;
+    setStatus("Ανανέωση δεδομένων...");
+    
+    console.log("Getting arrivals for stop:", stopCode);
     const arrivals = await apiCall(`act=getStopArrivals&p1=${stopCode}`);
-
-    if (arrivals.length) {
-      document.getElementById("eta").textContent =
-        `ETA: ${arrivals[0].btime2} λεπτά`;
+    
+    console.log("Arrivals received:", arrivals);
+    
+    const etaEl = document.getElementById("eta");
+    
+    if (Array.isArray(arrivals) && arrivals.length > 0) {
+      const eta = arrivals[0].btime2 || arrivals[0].btime || "N/A";
+      etaEl.textContent = `⏱️ ETA: ${eta} λεπτά`;
+    } else {
+      etaEl.textContent = "⏱️ ETA: Δεν υπάρχουν δεδομένα";
     }
-
+    
+    // Get bus location
     const routeCode = document.getElementById("dirSelect").value;
-    const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
-
-    if (buses.length) {
-      const b = buses[0];
-      if (!busMarker) {
-        busMarker = L.marker([b.lat, b.lng]).addTo(map);
-      } else {
-        busMarker.setLatLng([b.lat, b.lng]);
+    
+    if (routeCode) {
+      try {
+        console.log("Getting bus location for route:", routeCode);
+        const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
+        
+        console.log("Bus locations received:", buses);
+        
+        if (Array.isArray(buses) && buses.length > 0) {
+          const bus = buses[0];
+          
+          // ✅ FIXED: Handle both naming conventions
+          const lat = parseFloat(bus.CS_LAT || bus.lat);
+          const lng = parseFloat(bus.CS_LNG || bus.lng);
+          
+          if (!isNaN(lat) && !isNaN(lng)) {
+            if (!busMarker) {
+              busMarker = L.marker([lat, lng], {
+                icon: L.divIcon({
+                  className: 'bus-marker',
+                  html: '<div style="font-size: 24px;">🚌</div>',
+                  iconSize: [30, 30]
+                })
+              }).addTo(map);
+            } else {
+              busMarker.setLatLng([lat, lng]);
+            }
+            
+            map.setView([lat, lng], 15);
+            console.log("Bus marker placed at:", lat, lng);
+          }
+        } else {
+          console.log("No bus location data available");
+        }
+      } catch (busErr) {
+        console.log("Bus location not available:", busErr);
       }
-      map.setView([b.lat, b.lng], 14);
     }
+    
+    setStatus("Ενημερώθηκε επιτυχώς");
+    
   } catch (err) {
-    console.error(err);
+    console.error("Update ETA error:", err);
+    setStatus("Αποτυχία ανανέωσης", true);
+    alert("Σφάλμα ανανέωσης: " + err.message);
   }
 }
 
 /* ---------- Mobile Safari Fix ---------- */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
-document.querySelectorAll("select").forEach(sel => {
-  sel.addEventListener("focus", () => {
-    if (map) {
-      map.dragging.disable();
-      map.touchZoom.disable();
-      map.scrollWheelZoom.disable();
-    }
+function initApp() {
+  document.querySelectorAll("select").forEach(sel => {
+    sel.addEventListener("focus", () => {
+      if (map) {
+        map.dragging.disable();
+        map.touchZoom.disable();
+        map.scrollWheelZoom.disable();
+      }
+    });
+    
+    sel.addEventListener("blur", () => {
+      if (map) {
+        map.dragging.enable();
+        map.touchZoom.enable();
+        map.scrollWheelZoom.enable();
+      }
+    });
   });
-
-  sel.addEventListener("blur", () => {
-    if (map) {
-      map.dragging.enable();
-      map.touchZoom.enable();
-      map.scrollWheelZoom.enable();
-    }
-  });
-});
-
-init();
+  
+  init();
+}
