@@ -1,0 +1,6 @@
+body{margin:0;font-family:system-ui;background:#f1f5f9}
+header{padding:14px;background:#0f172a;color:#fff}
+.controls,.info{display:flex;gap:8px;padding:10px}
+select,button{padding:8px;border-radius:8px;border:1px solid #cbd5f5}
+button{background:#2563eb;color:#fff;border:none}
+#map{height:70vh;margin:10px;border-radius:12px}
