@@ -147,21 +147,53 @@ body {
   color: var(--text-muted);
 }
 
-/* ---------- ETA CARD ---------- */
-#eta {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 10px;
-}
+/* ===== ETA CARD (FINAL STYLE) ===== */
 
 .eta-card {
   width: 100%;
-  max-width: 320px;
-  padding: 14px 16px;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-soft);
+  max-width: 340px;
+  margin: 0 auto;
+  padding: 16px 18px;
+  border-radius: 14px;
   text-align: center;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.55);
   transition: all 0.25s ease;
+}
+
+/* Top line (route + direction) */
+.eta-route {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;          /* ⬅️ stronger contrast */
+  opacity: 0.95;
+  margin-bottom: 10px;
+}
+
+/* Main ETA text */
+.eta-time {
+  font-size: 1.8rem;       /* ⬅️ bigger */
+  font-weight: 900;        /* ⬅️ bolder */
+  letter-spacing: 0.4px;
+}
+
+/* Normal */
+.eta-normal {
+  background: linear-gradient(135deg, #2563eb, #1e3a8a);
+  color: #ffffff;
+}
+
+/* Urgent */
+.eta-urgent {
+  background: linear-gradient(135deg, #dc2626, #7f1d1d);
+  color: #ffffff;
+  animation: pulse-urgent 1.2s infinite;
+}
+
+/* Pulse */
+@keyframes pulse-urgent {
+  0%   { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
+  70%  { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
+  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
 }
 
 /* ---------- ROUTE ROW ---------- */

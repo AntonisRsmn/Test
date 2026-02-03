@@ -5,7 +5,6 @@ let map;
 let busMarkers = [];
 let stopMarkers = [];
 let routePolyline = null;
-
 let etaInterval = null;
 
 /* ================= HELPERS ================= */
@@ -84,6 +83,7 @@ async function drawRoute(routeCode, fallbackStops = []) {
 
 function snapToRoute(latlng) {
   if (!routePolyline) return latlng;
+
   let closest = null;
   let min = Infinity;
 
@@ -175,6 +175,9 @@ async function loadStops() {
 
     fallbackLatLngs.push([lat, lng]);
 
+    const code = s.StopCode;
+    const name = decodeGreek(s.StopDescr);
+
     const marker = L.circleMarker([lat, lng], {
       radius: 5,
       color: ROUTE_COLOR,
@@ -183,15 +186,16 @@ async function loadStops() {
     }).addTo(map);
 
     marker.on("click", () => {
-      stopSelect.value = s.StopCode;
+      stopSelect.value = code;
+      marker.bindPopup(`📍 <strong>${name}</strong>`).openPopup();
       startAutoRefresh();
     });
 
     stopMarkers.push(marker);
 
     const opt = document.createElement("option");
-    opt.value = s.StopCode;
-    opt.textContent = decodeGreek(s.StopDescr);
+    opt.value = code;
+    opt.textContent = name;
     stopSelect.appendChild(opt);
   });
 
@@ -235,21 +239,21 @@ async function updateBuses() {
 /* ================= ETA ================= */
 
 async function updateETA() {
-  const stopSelect = document.getElementById("stopSelect");
+  const lineSelect = document.getElementById("lineSelect");
   const dirSelect = document.getElementById("dirSelect");
+  const stopSelect = document.getElementById("stopSelect");
   const etaEl = document.getElementById("eta");
 
   if (!stopSelect.value || !dirSelect.value) return;
 
   try {
-    // 1️⃣ Πάρε λεωφορεία
     const buses = await apiCall(`act=getBusLocation&p1=${dirSelect.value}`);
     const hasActiveBus = Array.isArray(buses) && buses.length > 0;
 
-    // 2️⃣ Πάρε αφίξεις
     const arr = await apiCall(`act=getStopArrivals&p1=${stopSelect.value}`);
 
     let message = "Το δρομολόγιο δεν έχει ξεκινήσει ακόμη";
+    let urgent = false;
 
     if (hasActiveBus && Array.isArray(arr) && arr.length) {
       const eta = parseInt(arr[0].btime2 || arr[0].btime, 10);
@@ -258,27 +262,29 @@ async function updateETA() {
         message = "Μόλις πέρασε";
       } else {
         message = `Άφιξη σε ${eta} λεπτά`;
+        urgent = eta <= 5;
       }
     }
 
     etaEl.innerHTML = `
-      <div class="eta-box">
-        <div class="eta-minutes">${message}</div>
+      <div class="eta-card ${urgent ? "eta-urgent" : "eta-normal"}">
+        <div class="eta-route">
+          ${lineSelect.selectedOptions[0].text}
+        </div>
+        <div class="eta-time">${message}</div>
       </div>
     `;
 
-    // 3️⃣ Δείξε λεωφορεία ΜΟΝΟ αν υπάρχουν
-    if (hasActiveBus) {
-      updateBuses();
-    } else {
+    if (hasActiveBus) updateBuses();
+    else {
       busMarkers.forEach(b => map.removeLayer(b));
       busMarkers = [];
     }
 
   } catch {
     etaEl.innerHTML = `
-      <div class="eta-box">
-        <div class="eta-minutes">Μη διαθέσιμα δεδομένα</div>
+      <div class="eta-card eta-normal">
+        <div class="eta-time">Μη διαθέσιμα δεδομένα</div>
       </div>
     `;
   }
