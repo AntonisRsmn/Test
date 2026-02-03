@@ -1,13 +1,12 @@
 const PROXY_BASE = "/api";
+const ROUTE_COLOR = "#3b82f6";
 
 let map;
 let busMarkers = [];
 let stopMarkers = [];
 let routePolyline = null;
 
-/* ===== AUTO REFRESH STATE ===== */
 let etaInterval = null;
-let lastEtaValue = null;
 
 /* ================= HELPERS ================= */
 
@@ -24,16 +23,9 @@ function decodeGreek(text) {
 
 async function apiCall(query) {
   const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  if (data?.error) throw new Error(data.error);
+  if (!res.ok || data?.error) throw new Error("API error");
   return data;
-}
-
-function setStatus(msg, error = false) {
-  // const el = document.getElementById("status");
-  // el.textContent = `Κατάσταση: ${msg}`;
-  // el.style.color = error ? "var(--danger)" : "var(--accent)";
 }
 
 function clearMap() {
@@ -50,7 +42,6 @@ function clearMap() {
 function stopAutoRefresh() {
   if (etaInterval) clearInterval(etaInterval);
   etaInterval = null;
-  lastEtaValue = null;
 }
 
 /* ================= ROUTE ================= */
@@ -60,27 +51,18 @@ async function drawRoute(routeCode, fallbackStops = []) {
 
   try {
     const shapeRes = await apiCall(`act=getRouteShape&p1=${routeCode}`);
-    const points =
-      shapeRes?.points?.length
-        ? shapeRes.points
-        : Array.isArray(shapeRes)
-        ? shapeRes
-        : [];
+    const points = Array.isArray(shapeRes.points) ? shapeRes.points : [];
 
     if (points.length) {
-      const latlngs = points
-        .map(p => [
-          parseFloat(p.CS_LAT || p.lat),
-          parseFloat(p.CS_LNG || p.lng),
-        ])
-        .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+      const latlngs = points.map(p => [
+        parseFloat(p.CS_LAT || p.lat),
+        parseFloat(p.CS_LNG || p.lng),
+      ]);
 
       routePolyline = L.polyline(latlngs, {
-        color: "var(--accent)",
+        color: ROUTE_COLOR,
         weight: 4,
         opacity: 0.9,
-        lineJoin: "round",
-        lineCap: "round",
       }).addTo(map);
 
       map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
@@ -90,13 +72,11 @@ async function drawRoute(routeCode, fallbackStops = []) {
 
   if (fallbackStops.length > 1) {
     routePolyline = L.polyline(fallbackStops, {
-      color: "var(--accent)",
+      color: ROUTE_COLOR,
       weight: 3,
       opacity: 0.5,
       dashArray: "6 6",
     }).addTo(map);
-
-    map.fitBounds(routePolyline.getBounds(), { padding: [40, 40] });
   }
 }
 
@@ -104,7 +84,6 @@ async function drawRoute(routeCode, fallbackStops = []) {
 
 function snapToRoute(latlng) {
   if (!routePolyline) return latlng;
-
   let closest = null;
   let min = Infinity;
 
@@ -122,38 +101,25 @@ function snapToRoute(latlng) {
 /* ================= INIT ================= */
 
 async function init() {
-  try {
-    setStatus("Φόρτωση γραμμών...");
-    const lines = await apiCall("act=webGetLines");
+  const lines = await apiCall("act=webGetLines");
+  const lineSelect = document.getElementById("lineSelect");
 
-    const lineSelect = document.getElementById("lineSelect");
-    lineSelect.innerHTML = `<option value="">-- Επιλέξτε Γραμμή --</option>`;
+  lineSelect.innerHTML = `<option value="">-- Επιλέξτε Γραμμή --</option>`;
 
-    lines
-      .sort((a, b) => (parseInt(a.LineID) || 0) - (parseInt(b.LineID) || 0))
-      .forEach(l => {
-        const opt = document.createElement("option");
-        opt.value = l.LineCode;
-        opt.textContent = `${l.LineID} - ${decodeGreek(l.LineDescr)}`;
-        lineSelect.appendChild(opt);
-      });
+  lines.forEach(l => {
+    const opt = document.createElement("option");
+    opt.value = l.LineCode;
+    opt.textContent = `${l.LineID} - ${decodeGreek(l.LineDescr)}`;
+    lineSelect.appendChild(opt);
+  });
 
-    lineSelect.disabled = false;
-    lineSelect.onchange = () => {
-      stopAutoRefresh();
-      loadDirections();
-    };
+  lineSelect.disabled = false;
+  lineSelect.onchange = loadDirections;
 
-    map = L.map("map").setView([37.9838, 23.7275], 12);
-    L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      { maxZoom: 19 }
-    ).addTo(map);
-
-    setStatus("Έτοιμο");
-  } catch (e) {
-    setStatus("Σφάλμα φόρτωσης", true);
-  }
+  map = L.map("map").setView([37.9838, 23.7275], 12);
+  L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+  ).addTo(map);
 }
 
 /* ================= DIRECTIONS ================= */
@@ -162,18 +128,18 @@ async function loadDirections() {
   stopAutoRefresh();
   clearMap();
 
+  const lineSelect = document.getElementById("lineSelect");
   const dirSelect = document.getElementById("dirSelect");
   const stopSelect = document.getElementById("stopSelect");
 
   dirSelect.innerHTML = "";
   stopSelect.innerHTML = "";
 
-  const lineCode = document.getElementById("lineSelect").value;
-  if (!lineCode) return;
+  if (!lineSelect.value) return;
 
-  const routes = await apiCall(`act=getRoutesForLine&p1=${lineCode}`);
+  const routes = await apiCall(`act=getRoutesForLine&p1=${lineSelect.value}`);
+
   dirSelect.innerHTML = `<option value="">-- Επιλέξτε Κατεύθυνση --</option>`;
-
   routes.forEach(r => {
     const opt = document.createElement("option");
     opt.value = r.route_code || r.RouteCode;
@@ -195,152 +161,130 @@ async function loadStops() {
   const stopSelect = document.getElementById("stopSelect");
   const refresh = document.getElementById("refresh");
 
-  const routeCode = dirSelect.value;
-  if (!routeCode) return;
+  if (!dirSelect.value) return;
 
-  setStatus("Φόρτωση στάσεων...");
-  const stops = await apiCall(`act=getStopsForRoute&p1=${routeCode}`);
-
+  const stops = await apiCall(`act=getStopsForRoute&p1=${dirSelect.value}`);
   stopSelect.innerHTML = `<option value="">-- Επιλέξτε Στάση --</option>`;
+
   const fallbackLatLngs = [];
 
   stops.forEach(s => {
-    const lat = parseFloat(s.StopLat || s.lat);
-    const lng = parseFloat(s.StopLng || s.lng);
+    const lat = parseFloat(s.StopLat);
+    const lng = parseFloat(s.StopLng);
     if (isNaN(lat) || isNaN(lng)) return;
 
     fallbackLatLngs.push([lat, lng]);
 
-    const code = s.StopCode || s.stop_code;
-    const name = decodeGreek(s.StopDescr || s.stop_descr);
-
     const marker = L.circleMarker([lat, lng], {
       radius: 5,
-      color: "var(--accent)",
-      fillColor: "var(--accent)",
+      color: ROUTE_COLOR,
+      fillColor: ROUTE_COLOR,
       fillOpacity: 1,
     }).addTo(map);
 
-    marker.bindPopup(`📍 ${name}`);
     marker.on("click", () => {
-      stopSelect.value = code;
+      stopSelect.value = s.StopCode;
       startAutoRefresh();
     });
 
     stopMarkers.push(marker);
 
     const opt = document.createElement("option");
-    opt.value = code;
-    opt.textContent = name;
+    opt.value = s.StopCode;
+    opt.textContent = decodeGreek(s.StopDescr);
     stopSelect.appendChild(opt);
   });
 
-  await drawRoute(routeCode, fallbackLatLngs);
-
-  updateBusesOnly();
+  await drawRoute(dirSelect.value, fallbackLatLngs);
+  updateBuses();
 
   stopSelect.disabled = false;
   refresh.disabled = false;
   refresh.onclick = startAutoRefresh;
-
-  setStatus("Έτοιμο");
 }
 
+/* ================= BUSES ================= */
 
-
-async function updateBusesOnly() {
-  const dirSelect = document.getElementById("dirSelect");
-  const routeCode = dirSelect.value;
+async function updateBuses() {
+  const routeCode = document.getElementById("dirSelect").value;
   if (!routeCode) return;
 
-  try {
-    const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
+  const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
+  if (!Array.isArray(buses)) return;
 
-    busMarkers.forEach(b => map.removeLayer(b));
-    busMarkers = [];
+  busMarkers.forEach(b => map.removeLayer(b));
+  busMarkers = [];
 
-    buses.forEach(b => {
-      const lat = parseFloat(b.CS_LAT || b.lat);
-      const lng = parseFloat(b.CS_LNG || b.lng);
-      if (isNaN(lat) || isNaN(lng)) return;
+  buses.forEach(b => {
+    const lat = parseFloat(b.CS_LAT || b.lat);
+    const lng = parseFloat(b.CS_LNG || b.lng);
+    if (isNaN(lat) || isNaN(lng)) return;
 
-      const snapped = snapToRoute(L.latLng(lat, lng));
-
-      const marker = L.marker(snapped, {
+    busMarkers.push(
+      L.marker(snapToRoute(L.latLng(lat, lng)), {
         icon: L.divIcon({
           html: `<div class="bus-icon">🚌</div>`,
-          iconSize: [28, 28],
+          iconSize: [26, 26],
           className: "",
         }),
-      }).addTo(map);
-
-      busMarkers.push(marker);
-    });
-  } catch {
-    /* silent */
-  }
+      }).addTo(map)
+    );
+  });
 }
 
-/* ================= ETA + BUSES ================= */
+/* ================= ETA ================= */
 
 async function updateETA() {
-  const lineSelect = document.getElementById("lineSelect");
-  const dirSelect = document.getElementById("dirSelect");
   const stopSelect = document.getElementById("stopSelect");
+  const dirSelect = document.getElementById("dirSelect");
   const etaEl = document.getElementById("eta");
 
-  if (!lineSelect.value || !dirSelect.value || !stopSelect.value) return;
+  if (!stopSelect.value || !dirSelect.value) return;
 
   try {
-    const routeCode = dirSelect.value;
+    // 1️⃣ Πάρε λεωφορεία
+    const buses = await apiCall(`act=getBusLocation&p1=${dirSelect.value}`);
+    const hasActiveBus = Array.isArray(buses) && buses.length > 0;
 
-    const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
-    busMarkers.forEach(b => map.removeLayer(b));
-    busMarkers = [];
-
-    buses.forEach(b => {
-      const lat = parseFloat(b.CS_LAT || b.lat);
-      const lng = parseFloat(b.CS_LNG || b.lng);
-      if (isNaN(lat) || isNaN(lng)) return;
-
-      const snapped = snapToRoute(L.latLng(lat, lng));
-
-      busMarkers.push(
-        L.marker(snapped, {
-          icon: L.divIcon({
-            html: `<div class="bus-icon">🚌</div>`,
-            iconSize: [26, 26],
-            className: "",
-          }),
-        }).addTo(map)
-      );
-    });
-
+    // 2️⃣ Πάρε αφίξεις
     const arr = await apiCall(`act=getStopArrivals&p1=${stopSelect.value}`);
-    if (!arr.length) return;
 
-    const etaValue = parseInt(arr[0].btime2 || arr[0].btime, 10);
-    if (etaValue === lastEtaValue) return;
+    let message = "Το δρομολόγιο δεν έχει ξεκινήσει ακόμη";
 
-    lastEtaValue = etaValue;
+    if (hasActiveBus && Array.isArray(arr) && arr.length) {
+      const eta = parseInt(arr[0].btime2 || arr[0].btime, 10);
 
-    const lineText =
-      lineSelect.options[lineSelect.selectedIndex].text.split(" - ")[0];
-    const dirText =
-      dirSelect.options[dirSelect.selectedIndex].text;
+      if (eta <= 0) {
+        message = "Μόλις πέρασε";
+      } else {
+        message = `Άφιξη σε ${eta} λεπτά`;
+      }
+    }
 
     etaEl.innerHTML = `
-      <div class="eta-box ${etaValue < 5 ? "urgent" : ""}">
-        <div class="eta-line">${lineText} • ${dirText}</div>
-        <div class="eta-minutes">Άφιξη σε ${etaValue} λεπτά</div>
+      <div class="eta-box">
+        <div class="eta-minutes">${message}</div>
       </div>
     `;
 
-    setStatus("Ενημερώθηκε");
+    // 3️⃣ Δείξε λεωφορεία ΜΟΝΟ αν υπάρχουν
+    if (hasActiveBus) {
+      updateBuses();
+    } else {
+      busMarkers.forEach(b => map.removeLayer(b));
+      busMarkers = [];
+    }
+
   } catch {
-    setStatus("Σφάλμα ανανέωσης", true);
+    etaEl.innerHTML = `
+      <div class="eta-box">
+        <div class="eta-minutes">Μη διαθέσιμα δεδομένα</div>
+      </div>
+    `;
   }
 }
+
+/* ================= AUTO REFRESH ================= */
 
 function startAutoRefresh() {
   stopAutoRefresh();

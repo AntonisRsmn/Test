@@ -21,7 +21,7 @@ let cachedLines = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 60 * 60 * 1000;
 
-/* ---------- HELPERS ---------- */
+/* ---------- FETCH ---------- */
 async function safeFetch(url, timeoutMs = 15000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -39,60 +39,39 @@ async function safeFetch(url, timeoutMs = 15000) {
   }
 }
 
-/* ---------- API ROUTES FIRST ---------- */
+/* ---------- API ---------- */
 app.get("/api", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "Missing q" });
 
-  console.log("API Request:", q);
-
-  /* ---------- LINES ---------- */
   if (q === "act=webGetLines") {
     if (cachedLines && Date.now() - cacheTimestamp < CACHE_DURATION) {
-      console.log("Returning cached lines");
       return res.json(cachedLines);
     }
     try {
-      console.log("Fetching lines from OASA...");
       const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 30000);
       cachedLines = data;
       cacheTimestamp = Date.now();
-      console.log(`✅ Lines cached (${data.length})`);
       return res.json(data);
-    } catch (err) {
-      console.error("Lines fetch error:", err.message);
+    } catch {
       if (cachedLines) return res.json(cachedLines);
       return res.status(503).json({ error: "Lines unavailable" });
     }
   }
 
-  /* ---------- ROUTE SHAPE (SAFE) ---------- */
   if (q.includes("act=getRouteShape")) {
     const match = q.match(/p1=(\d+)/);
-    const routeCode = match?.[1];
     try {
       const data = await safeFetch(
-        `${OASA_BASE}?act=getRouteShape&p1=${routeCode}`,
+        `${OASA_BASE}?act=getRouteShape&p1=${match?.[1]}`,
         20000
       );
-      if (!Array.isArray(data) || data.length === 0) {
-        throw new Error("Empty shape");
-      }
-      return res.json({
-        ok: true,
-        fallback: false,
-        points: data,
-      });
-    } catch (e) {
-      return res.json({
-        ok: false,
-        fallback: true,
-        points: [],
-      });
+      return res.json({ ok: true, points: data });
+    } catch {
+      return res.json({ ok: false, points: [] });
     }
   }
 
-  /* ---------- STOPS ---------- */
   if (q.includes("act=getStopsForRoute")) {
     const match = q.match(/p1=(\d+)/);
     const routeCode = match?.[1];
@@ -105,56 +84,30 @@ app.get("/api", async (req, res) => {
     for (const ep of endpoints) {
       try {
         const data = await safeFetch(`${OASA_BASE}${ep}`);
-        if (Array.isArray(data) && data.length > 0) {
-          return res.json(data);
-        }
+        if (Array.isArray(data) && data.length) return res.json(data);
       } catch {}
     }
     return res.status(503).json({ error: "Stops unavailable" });
   }
 
-  /* ---------- GENERIC PROXY ---------- */
   try {
     const data = await safeFetch(`${OASA_BASE}?${q}`);
     return res.json(data);
-  } catch (err) {
-    return res.status(502).json({
-      error: "OASA API failed",
-      details: err.message,
-    });
+  } catch {
+    return res.status(502).json({ error: "OASA API failed" });
   }
 });
 
-/* ---------- HEALTH CHECK ---------- */
-app.get("/health", (req, res) => {
-  res.json({
-    status: "running",
-    cachedLines: cachedLines ? cachedLines.length : 0,
-    cacheAge: cacheTimestamp
-      ? Math.floor((Date.now() - cacheTimestamp) / 1000)
-      : null,
-  });
-});
+/* ---------- STATIC ---------- */
+app.use(express.static(path.join(__dirname, "public")));
 
-/* ---------- SERVE STATIC FILES WITH CORRECT MIME TYPES ---------- */
-app.use(express.static(path.join(__dirname, "public"), {
-  setHeaders: (res, filepath) => {
-    if (filepath.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript');
-    } else if (filepath.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css');
-    } else if (filepath.endsWith('.html')) {
-      res.setHeader('Content-Type', 'text/html');
-    }
-  }
-}));
-
-/* ---------- CATCH-ALL FOR SPA ---------- */
-app.get("*", (req, res) => {
+/* ---------- SPA ---------- */
+app.get("*", (_, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 /* ---------- START ---------- */
 app.listen(PORT, () => {
-  console.log(`🚀 Proxy server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  if (cachedLines) console.log(`📦 Lines cached: ${cachedLines.length}`);
 });
