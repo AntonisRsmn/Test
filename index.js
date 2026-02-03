@@ -4,49 +4,19 @@ import cors from "cors";
 
 const app = express();
 
-app.use(cors({ origin: "*" }));
+app.use(cors({
+  origin: "*",
+  methods: ["GET"],
+}));
+
+/* ================= CACHE ================= */
 
 let cachedLines = null;
-let cacheTimestamp = 0;
-const CACHE_DURATION = 60 * 60 * 1000;
+let cacheTimestamp = null;
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 
-/* ---------- PRELOAD LINES (CRITICAL) ---------- */
-async function preloadLines() {
-  try {
-    console.log("⏳ Preloading OASA lines...");
+/* ================= HEALTH ================= */
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-
-    const res = await fetch(
-      "https://telematics.oasa.gr/api/?act=webGetLines",
-      {
-        signal: controller.signal,
-        headers: { "User-Agent": "Mozilla/5.0" }
-      }
-    );
-
-    clearTimeout(timeout);
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const data = await res.json();
-
-    if (Array.isArray(data) && data.length > 0) {
-      cachedLines = data;
-      cacheTimestamp = Date.now();
-      console.log(`✅ Cached ${data.length} lines`);
-    }
-
-  } catch (err) {
-    console.error("❌ Preload failed:", err.message);
-  }
-}
-
-preloadLines();
-setInterval(preloadLines, CACHE_DURATION);
-
-/* ---------- HEALTH ---------- */
 app.get("/", (req, res) => {
   res.json({
     status: "running",
@@ -57,48 +27,128 @@ app.get("/", (req, res) => {
   });
 });
 
-/* ---------- API ---------- */
+/* ================= API ================= */
+
 app.get("/api", async (req, res) => {
   const q = req.query.q;
-  if (!q) return res.status(400).json({ error: "Missing query" });
+  if (!q) return res.status(400).json({ error: "Missing q" });
 
   console.log("📡 API:", q);
 
-  // LINES
+  /* ---------- LINES ---------- */
   if (q === "act=webGetLines") {
-    if (cachedLines) {
+
+    // Serve cache if fresh
+    if (cachedLines && Date.now() - cacheTimestamp < CACHE_DURATION) {
+      console.log("🧠 Lines from cache");
       return res.json(cachedLines);
     }
-    return res.status(503).json({
-      error: "Lines not ready yet"
-    });
+
+    try {
+      console.log("🌐 Fetching lines from OASA…");
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+
+      const response = await fetch(
+        "https://telematics.oasa.gr/api/?act=webGetLines",
+        {
+          signal: controller.signal,
+          headers: { "User-Agent": "Mozilla/5.0" }
+        }
+      );
+
+      clearTimeout(timeout);
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data = await response.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        cachedLines = data;
+        cacheTimestamp = Date.now();
+        console.log(`✅ Lines fetched: ${data.length}`);
+        return res.json(data);
+      }
+
+      throw new Error("Empty lines");
+
+    } catch (err) {
+      console.error("❌ Lines failed:", err.message);
+
+      // Serve stale cache if exists
+      if (cachedLines) {
+        console.warn("⚠️ Serving stale cache");
+        return res.json(cachedLines);
+      }
+
+      // IMPORTANT: return empty array (frontend will unlock)
+      return res.json([]);
+    }
   }
 
-  // GENERIC PROXY
+  /* ---------- STOPS ---------- */
+  if (q.includes("act=getStopsForRoute")) {
+    const match = q.match(/p1=(\d+)/);
+    const routeCode = match?.[1];
+
+    const endpoints = [
+      `https://telematics.oasa.gr/api/?act=webGetStops&p1=${routeCode}`,
+      `https://telematics.oasa.gr/api/?act=getStopsForRoute&p1=${routeCode}`,
+      `https://telematics.oasa.gr/api/?act=getStops&p1=${routeCode}`,
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
+        const r = await fetch(url, {
+          signal: controller.signal,
+          headers: { "User-Agent": "Mozilla/5.0" }
+        });
+
+        clearTimeout(timeout);
+        if (!r.ok) continue;
+
+        const data = await r.json();
+        if (Array.isArray(data) && data.length) {
+          return res.json(data);
+        }
+      } catch {}
+    }
+
+    return res.json([]);
+  }
+
+  /* ---------- GENERIC PROXY ---------- */
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const url = "https://telematics.oasa.gr/api/?" + q;
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
+    const response = await fetch(
+      "https://telematics.oasa.gr/api/?" + q,
+      {
+        signal: controller.signal,
+        headers: { "User-Agent": "Mozilla/5.0" }
+      }
+    );
 
     clearTimeout(timeout);
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+    if (!response.ok) throw new Error("Upstream error");
     const data = await response.json();
-    res.json(data);
+    return res.json(data);
 
   } catch (err) {
     console.error("❌ Proxy error:", err.message);
-    res.status(502).json({ error: "OASA API failed" });
+    return res.json([]);
   }
 });
 
+/* ================= SERVER ================= */
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`🚀 Backend live on port ${PORT}`);
+  console.log(`🚀 Proxy running on port ${PORT}`);
 });
