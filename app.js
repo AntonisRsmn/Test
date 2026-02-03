@@ -1,7 +1,7 @@
 const PROXY_BASE =
   location.hostname === "localhost"
     ? "http://localhost:4000/api"
-    : "https://oasa-proxy.onrender.com/api";
+    : "https://test-4fo1.onrender.com";
 let map, busMarker;
 
 /* ---------- Helpers ---------- */
