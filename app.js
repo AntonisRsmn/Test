@@ -1,4 +1,4 @@
-const PROXY_BASE = "http://localhost:4000/api";
+const PROXY_BASE = "https://OASA.onrender.com/api";
 let map, busMarker;
 
 /* ---------- Helpers ---------- */
