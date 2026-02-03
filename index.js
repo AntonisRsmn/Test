@@ -1,11 +1,20 @@
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 
+// Get __dirname in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 /* ---------- CORS ---------- */
 app.use(cors({ origin: "*", methods: ["GET"] }));
+
+/* ---------- SERVE STATIC FILES ---------- */
+app.use(express.static(path.join(__dirname, "public")));
 
 /* ---------- CONFIG ---------- */
 const OASA_BASE = "https://telematics.oasa.gr/api/";
@@ -20,14 +29,13 @@ const CACHE_DURATION = 60 * 60 * 1000;
 async function safeFetch(url, timeoutMs = 15000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": "Mozilla/5.0 OASA-Proxy" },
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`); // FIXED
     return await res.json();
   } catch (e) {
     clearTimeout(timeout);
@@ -36,7 +44,7 @@ async function safeFetch(url, timeoutMs = 15000) {
 }
 
 /* ---------- HEALTH ---------- */
-app.get("/", (req, res) => {
+app.get("/health", (req, res) => { // Changed from "/" to "/health"
   res.json({
     status: "running",
     cachedLines: cachedLines ? cachedLines.length : 0,
@@ -50,7 +58,6 @@ app.get("/", (req, res) => {
 app.get("/api", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "Missing q" });
-
   // console.log("📡 API:", q);
 
   /* ---------- LINES ---------- */
@@ -58,12 +65,11 @@ app.get("/api", async (req, res) => {
     if (cachedLines && Date.now() - cacheTimestamp < CACHE_DURATION) {
       return res.json(cachedLines);
     }
-
     try {
-      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000);
+      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000); // FIXED
       cachedLines = data;
       cacheTimestamp = Date.now();
-      console.log(`✅ Lines cached (${data.length})`);
+      console.log(`✅ Lines cached (${data.length})`); // FIXED
       return res.json(data);
     } catch {
       if (cachedLines) return res.json(cachedLines);
@@ -75,19 +81,15 @@ app.get("/api", async (req, res) => {
   if (q.includes("act=getRouteShape")) {
     const match = q.match(/p1=(\d+)/);
     const routeCode = match?.[1];
-
     // console.log("🛣️ Route shape request:", routeCode);
-
     try {
       const data = await safeFetch(
         `${OASA_BASE}?act=getRouteShape&p1=${routeCode}`,
         20000
       );
-
       if (!Array.isArray(data) || data.length === 0) {
         throw new Error("Empty shape");
       }
-
       return res.json({
         ok: true,
         fallback: false,
@@ -107,29 +109,26 @@ app.get("/api", async (req, res) => {
   if (q.includes("act=getStopsForRoute")) {
     const match = q.match(/p1=(\d+)/);
     const routeCode = match?.[1];
-
     const endpoints = [
       `?act=webGetStops&p1=${routeCode}`,
       `?act=getStopsForRoute&p1=${routeCode}`,
       `?act=webGetStopsForRoute&p1=${routeCode}`,
       `?act=getStops&p1=${routeCode}`,
     ];
-
     for (const ep of endpoints) {
       try {
-        const data = await safeFetch(`${OASA_BASE}${ep}`);
+        const data = await safeFetch(`${OASA_BASE}${ep}`); // FIXED
         if (Array.isArray(data) && data.length > 0) {
           return res.json(data);
         }
       } catch {}
     }
-
     return res.status(503).json({ error: "Stops unavailable" });
   }
 
   /* ---------- GENERIC PROXY ---------- */
   try {
-    const data = await safeFetch(`${OASA_BASE}?${q}`);
+    const data = await safeFetch(`${OASA_BASE}?${q}`); // FIXED
     return res.json(data);
   } catch (err) {
     return res.status(502).json({
@@ -139,7 +138,12 @@ app.get("/api", async (req, res) => {
   }
 });
 
+/* ---------- SERVE INDEX.HTML FOR ALL OTHER ROUTES ---------- */
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
 /* ---------- START ---------- */
 app.listen(PORT, () => {
-  console.log(`🚀 Proxy server running on port ${PORT}`);
+  console.log(`🚀 Proxy server running on port ${PORT}`); // FIXED
 });

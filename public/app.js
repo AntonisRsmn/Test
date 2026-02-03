@@ -1,4 +1,4 @@
-const PROXY_BASE = "https://test-4fo1.onrender.com/api";
+const PROXY_BASE = "/api";
 
 let map;
 let busMarkers = [];
