@@ -49,37 +49,35 @@ function setStatus(message, isError = false) {
 
 /* ---------- Init ---------- */
 async function init() {
+  const lineSelect = document.getElementById("lineSelect");
+
   try {
     setStatus("Φόρτωση γραμμών...");
 
-    let lines = [];
-    try {
-      const raw = await apiCall("act=webGetLines");
-      lines = Array.isArray(raw) ? raw : [];
-    } catch {
-      console.warn("⚠️ Backend not ready yet");
-    }
-
-    const lineSelect = document.getElementById("lineSelect");
-    lineSelect.innerHTML = "";
-
-    if (!lines.length) {
-      lineSelect.innerHTML =
-        '<option value="">⏳ Οι γραμμές φορτώνουν – δοκίμασε σε λίγο</option>';
-      lineSelect.disabled = true;
-      setStatus("Αναμονή backend...");
-      return;
-    }
+    const raw = await apiCall("act=webGetLines");
+    const lines = Array.isArray(raw) ? raw : [];
 
     lineSelect.innerHTML =
       '<option value="">-- Επιλέξτε Γραμμή --</option>';
 
-    lines.forEach(l => {
-      const o = document.createElement("option");
-      o.value = l.LineCode;
-      o.textContent = `${l.LineID} - ${decodeGreek(l.LineDescr)}`;
-      lineSelect.appendChild(o);
-    });
+    if (lines.length === 0) {
+      // ⬅️ ΚΡΙΣΙΜΟ: ΜΗΝ ΚΟΛΛΑΣ ΤΟ UI
+      lineSelect.innerHTML =
+        '<option value="">⚠️ Οι γραμμές δεν είναι διαθέσιμες τώρα</option>';
+      lineSelect.disabled = false;
+
+      setStatus("Αναμονή backend / ΟΑΣΑ…");
+      return;
+    }
+
+    lines
+      .sort((a, b) => (parseInt(a.LineID) || 0) - (parseInt(b.LineID) || 0))
+      .forEach(line => {
+        const opt = document.createElement("option");
+        opt.value = line.LineCode;
+        opt.textContent = `${line.LineID || ""} - ${decodeGreek(line.LineDescr)}`;
+        lineSelect.appendChild(opt);
+      });
 
     lineSelect.disabled = false;
     lineSelect.onchange = loadDirections;
@@ -87,13 +85,20 @@ async function init() {
     document.getElementById("refresh").onclick = updateETA;
 
     map = L.map("map").setView([37.9838, 23.7275], 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+    }).addTo(map);
 
     setStatus("Έτοιμο");
 
   } catch (err) {
-    console.error(err);
-    setStatus("Σφάλμα αρχικοποίησης", true);
+    console.error("Init failed:", err);
+
+    lineSelect.innerHTML =
+      '<option value="">❌ Backend μη διαθέσιμο</option>';
+    lineSelect.disabled = false;
+
+    setStatus("Backend offline", true);
   }
 }
 
