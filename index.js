@@ -54,7 +54,7 @@ app.get("/api", async (req, res) => {
     }
     try {
       console.log("Fetching lines from OASA...");
-      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000);
+      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 30000);
       cachedLines = data;
       cacheTimestamp = Date.now();
       console.log(`✅ Lines cached (${data.length})`);
