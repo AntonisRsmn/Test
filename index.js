@@ -4,165 +4,138 @@ import cors from "cors";
 
 const app = express();
 
+/* ---------- CORS ---------- */
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST'],
-  credentials: true
+  origin: "*",
+  methods: ["GET"],
 }));
 
-let cachedLines = null;
-let cacheTimestamp = null;
-const CACHE_DURATION = 60 * 60 * 1000;
+/* ---------- CONFIG ---------- */
+const OASA_BASE = "https://telematics.oasa.gr/api/";
+const PORT = process.env.PORT || 4000;
 
-async function preloadLines() {
+/* ---------- CACHE ---------- */
+let cachedLines = null;
+let linesCachedAt = 0;
+const LINES_TTL = 60 * 60 * 1000; // 1 hour
+
+/* ---------- FETCH HELPER ---------- */
+async function safeFetch(url, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    console.log("⏳ Preloading OASA lines...");
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    
-    const res = await fetch(
-      "https://telematics.oasa.gr/api/?act=webGetLines",
-      { signal: controller.signal }
-    );
-    
-    clearTimeout(timeout);
-    
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "OASA-Proxy/1.0" }
+    });
+
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
-    
-    cachedLines = await res.json();
-    cacheTimestamp = Date.now();
-    console.log(`✅ Lines cached: ${cachedLines.length} lines`);
-  } catch (e) {
-    console.error("❌ Preload failed:", e.message);
+
+    return await res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/* ---------- PRELOAD LINES ---------- */
+async function preloadLines() {
+  try {
+    console.log("⏳ Preloading OASA lines...");
+    const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 30000);
+
+    cachedLines = Array.isArray(data) ? data : data?.data || [];
+    linesCachedAt = Date.now();
+
+    console.log(`✅ Lines cached: ${cachedLines.length}`);
+  } catch (err) {
+    console.error("❌ Lines preload failed:", err.message);
     cachedLines = null;
   }
 }
 
 preloadLines();
-setInterval(preloadLines, CACHE_DURATION);
+setInterval(preloadLines, LINES_TTL);
 
+/* ---------- HEALTH ---------- */
 app.get("/", (req, res) => {
-  res.json({ 
+  res.json({
     status: "running",
     cachedLines: cachedLines ? cachedLines.length : 0,
-    cacheAge: cacheTimestamp ? Math.floor((Date.now() - cacheTimestamp) / 1000) : null
+    cacheAgeSeconds: linesCachedAt
+      ? Math.floor((Date.now() - linesCachedAt) / 1000)
+      : null
   });
 });
 
+/* ---------- API ---------- */
 app.get("/api", async (req, res) => {
   const q = req.query.q;
-  
   if (!q) {
-    return res.status(400).json({ error: "Missing query parameter" });
+    return res.status(400).json({ error: "Missing query parameter q" });
   }
-  
-  console.log("📡 API Request:", q);
-  
-  // Serve lines from cache
+
+  console.log("📡 API:", q);
+
+  /* ---- webGetLines (CACHE) ---- */
   if (q === "act=webGetLines") {
-    if (cachedLines && (Date.now() - cacheTimestamp < CACHE_DURATION)) {
+    if (cachedLines && Date.now() - linesCachedAt < LINES_TTL) {
       return res.json(cachedLines);
     }
-    
+
     await preloadLines();
-    
-    if (cachedLines) {
-      return res.json(cachedLines);
-    }
-    
-    return res.status(503).json({
-      error: "Lines not ready yet"
-    });
+    if (cachedLines) return res.json(cachedLines);
+
+    return res.status(503).json({ error: "Lines unavailable" });
   }
-  
-  // Handle stops request - try multiple endpoints
-  if (q.includes("act=getStopsForRoute")) {
-    const match = q.match(/p1=(\d+)/);
-    const routeCode = match ? match[1] : null;
-    
-    console.log("🔍 Trying multiple stop endpoints for route:", routeCode);
-    
-    // Try different endpoint variations
+
+  /* ---- getStopsForRoute (MULTI-ENDPOINT FALLBACK) ---- */
+  if (q.startsWith("act=getStopsForRoute")) {
+    const routeCode = q.match(/p1=(\d+)/)?.[1];
+
     const endpoints = [
-      `https://telematics.oasa.gr/api/?act=webGetStops&p1=${routeCode}`,
-      `https://telematics.oasa.gr/api/?act=getStopsForRoute&p1=${routeCode}`,
-      `https://telematics.oasa.gr/api/?act=webGetStopsForRoute&p1=${routeCode}`,
-      `https://telematics.oasa.gr/api/?act=getStops&p1=${routeCode}`
+      `act=getStopsForRoute&p1=${routeCode}`,
+      `act=webGetStops&p1=${routeCode}`,
+      `act=webGetStopsForRoute&p1=${routeCode}`,
+      `act=getStops&p1=${routeCode}`,
     ];
-    
-    for (const endpoint of endpoints) {
+
+    for (const e of endpoints) {
       try {
-        console.log("🔄 Trying:", endpoint);
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        
-        const response = await fetch(endpoint, { signal: controller.signal });
-        clearTimeout(timeout);
-        
-        if (!response.ok) {
-          console.log("❌ HTTP error:", response.status);
-          continue;
-        }
-        
-        const data = await response.json();
-        console.log("📦 Response:", JSON.stringify(data).substring(0, 300));
-        
-        // Check if we got valid data
-        if (data.error) {
-          console.log("❌ API returned error:", data.error);
-          continue;
-        }
-        
-        if (Array.isArray(data) && data.length > 0) {
-          console.log("✅ Valid stops data found! Count:", data.length);
-          return res.json(data);
+        const data = await safeFetch(`${OASA_BASE}?${e}`, 12000);
+        const stops = Array.isArray(data) ? data : data?.data;
+
+        if (Array.isArray(stops) && stops.length > 0) {
+          console.log(`✅ Stops OK via ${e}`);
+          return res.json(stops);
         }
       } catch (err) {
-        console.log("❌ Endpoint failed:", err.message);
-        continue;
+        console.log(`⚠️ Stops endpoint failed: ${e}`);
       }
     }
-    
-    console.log("⚠️ All stop endpoints failed");
-    return res.status(503).json({ 
-      error: "Could not fetch stops. OASA API might be down or the route code is invalid." 
+
+    return res.status(503).json({
+      error: "Could not fetch stops"
     });
   }
-  
-  // Proxy all other requests
+
+  /* ---- DEFAULT PROXY ---- */
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    
-    const url = "https://telematics.oasa.gr/api/?" + q;
-    console.log("🔄 Proxying to:", url);
-    
-    const response = await fetch(url, { signal: controller.signal });
-    
-    clearTimeout(timeout);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log("✅ Response received");
-    
-    res.json(data);
-    
+    const data = await safeFetch(`${OASA_BASE}?${q}`);
+    return res.json(data);
   } catch (err) {
     console.error("❌ Proxy error:", err.message);
-    res.status(502).json({
+    return res.status(502).json({
       error: "Upstream OASA API failed",
       details: err.message
     });
   }
 });
 
-const PORT = process.env.PORT || 4000;
+/* ---------- START ---------- */
 app.listen(PORT, () => {
-  console.log(`🚀 Proxy server running at http://localhost:${PORT}`);
-  console.log(`📡 API endpoint: http://localhost:${PORT}/api`);
+  console.log(`🚀 Proxy running on http://localhost:${PORT}`);
+  console.log(`📡 Endpoint: /api?q=act=webGetLines`);
 });
