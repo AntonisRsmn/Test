@@ -51,51 +51,49 @@ function setStatus(message, isError = false) {
 async function init() {
   try {
     setStatus("Φόρτωση γραμμών...");
-    
-    const raw = await apiCall("act=webGetLines");
-    const lines = Array.isArray(raw) ? raw : (raw.data || []);
-    
-    if (!lines.length) {
-      throw new Error("Δεν βρέθηκαν γραμμές");
+
+    let lines = [];
+    try {
+      const raw = await apiCall("act=webGetLines");
+      lines = Array.isArray(raw) ? raw : [];
+    } catch {
+      console.warn("⚠️ Backend not ready yet");
     }
-    
+
     const lineSelect = document.getElementById("lineSelect");
-    lineSelect.innerHTML = '<option value="">-- Επιλέξτε Γραμμή --</option>';
-    
-    lines.sort((a, b) => {
-      const aNum = parseInt(a.LineID) || 0;
-      const bNum = parseInt(b.LineID) || 0;
-      return aNum - bNum;
+    lineSelect.innerHTML = "";
+
+    if (!lines.length) {
+      lineSelect.innerHTML =
+        '<option value="">⏳ Οι γραμμές φορτώνουν – δοκίμασε σε λίγο</option>';
+      lineSelect.disabled = true;
+      setStatus("Αναμονή backend...");
+      return;
+    }
+
+    lineSelect.innerHTML =
+      '<option value="">-- Επιλέξτε Γραμμή --</option>';
+
+    lines.forEach(l => {
+      const o = document.createElement("option");
+      o.value = l.LineCode;
+      o.textContent = `${l.LineID} - ${decodeGreek(l.LineDescr)}`;
+      lineSelect.appendChild(o);
     });
-    
-    lines.forEach(line => {
-      const option = document.createElement("option");
-      option.value = line.LineCode;
-      
-      const lineID = line.LineID || "";
-      const lineDescr = decodeGreek(line.LineDescr) || line.LineDescr || "";
-      option.textContent = lineID ? `${lineID} - ${lineDescr}` : lineDescr;
-      
-      lineSelect.appendChild(option);
-    });
-    
+
     lineSelect.disabled = false;
     lineSelect.onchange = loadDirections;
-    
+
     document.getElementById("refresh").onclick = updateETA;
-    
+
     map = L.map("map").setView([37.9838, 23.7275], 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap'
-    }).addTo(map);
-    
-    setStatus("Έτοιμο - Επιλέξτε γραμμή");
-    
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+    setStatus("Έτοιμο");
+
   } catch (err) {
-    console.error("Init error:", err);
-    setStatus("Αποτυχία φόρτωσης - Δοκιμάστε ξανά", true);
-    alert("Σφάλμα: " + err.message);
+    console.error(err);
+    setStatus("Σφάλμα αρχικοποίησης", true);
   }
 }
 
