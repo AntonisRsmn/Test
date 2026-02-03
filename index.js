@@ -12,9 +12,6 @@ const __dirname = path.dirname(__filename);
 /* ---------- CORS ---------- */
 app.use(cors({ origin: "*", methods: ["GET"] }));
 
-/* ---------- SERVE STATIC FILES ---------- */
-app.use(express.static(path.join(__dirname, "public")));
-
 /* ---------- CONFIG ---------- */
 const OASA_BASE = "https://telematics.oasa.gr/api/";
 const PORT = process.env.PORT || 4000;
@@ -42,23 +39,28 @@ async function safeFetch(url, timeoutMs = 15000) {
   }
 }
 
-/* ---------- API ---------- */
+/* ---------- API ROUTES FIRST ---------- */
 app.get("/api", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "Missing q" });
 
+  console.log("API Request:", q);
+
   /* ---------- LINES ---------- */
   if (q === "act=webGetLines") {
     if (cachedLines && Date.now() - cacheTimestamp < CACHE_DURATION) {
+      console.log("Returning cached lines");
       return res.json(cachedLines);
     }
     try {
+      console.log("Fetching lines from OASA...");
       const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000);
       cachedLines = data;
       cacheTimestamp = Date.now();
       console.log(`✅ Lines cached (${data.length})`);
       return res.json(data);
-    } catch {
+    } catch (err) {
+      console.error("Lines fetch error:", err.message);
       if (cachedLines) return res.json(cachedLines);
       return res.status(503).json({ error: "Lines unavailable" });
     }
@@ -121,6 +123,35 @@ app.get("/api", async (req, res) => {
       details: err.message,
     });
   }
+});
+
+/* ---------- HEALTH CHECK ---------- */
+app.get("/health", (req, res) => {
+  res.json({
+    status: "running",
+    cachedLines: cachedLines ? cachedLines.length : 0,
+    cacheAge: cacheTimestamp
+      ? Math.floor((Date.now() - cacheTimestamp) / 1000)
+      : null,
+  });
+});
+
+/* ---------- SERVE STATIC FILES WITH CORRECT MIME TYPES ---------- */
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders: (res, filepath) => {
+    if (filepath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    } else if (filepath.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    } else if (filepath.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html');
+    }
+  }
+}));
+
+/* ---------- CATCH-ALL FOR SPA ---------- */
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 /* ---------- START ---------- */
