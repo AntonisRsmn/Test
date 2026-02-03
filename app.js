@@ -1,20 +1,12 @@
 const PROXY_BASE = "http://localhost:4000/api";
+let map, busMarker;
 
-let routePolyline = null;
-let etaRequestInProgress = false;
-let map;
-let busMarker = null;
-let stopMarkers = [];
-let autoRefreshTimer = null;
-let lastEtaSignature = null;
-
-/* ================= HELPERS ================= */
-
+/* ---------- Helpers ---------- */
 function decodeGreek(text) {
   if (!text) return "";
   try {
-    return text.replace(/\\u[\dA-F]{4}/gi, m =>
-      String.fromCharCode(parseInt(m.replace("\\u", ""), 16))
+    return text.replace(/\\u[\dA-F]{4}/gi, match => 
+      String.fromCharCode(parseInt(match.replace(/\\u/g, ''), 16))
     );
   } catch {
     return text;
@@ -22,341 +14,304 @@ function decodeGreek(text) {
 }
 
 async function apiCall(query) {
-  const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  if (data?.error) throw new Error(data.error);
-  return data;
-}
-
-function setStatus(msg, error = false) {
-  const el = document.getElementById("status");
-  el.textContent = `Κατάσταση: ${msg}`;
-  el.style.color = error ? "#dc2626" : "#059669";
-}
-
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) *
-    Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function buildEtaSignature(arrivals) {
-  if (!Array.isArray(arrivals)) return null;
-  return arrivals
-    .slice(0, 3)
-    .map(a => `${a.route_code || a.RouteCode}-${a.btime2}`)
-    .join("|");
-}
-
-/* ================= ROUTE POLYLINE ================= */
-
-async function drawRoutePolyline(routeCode) {
   try {
-    if (routePolyline) {
-      map.removeLayer(routePolyline);
-      routePolyline = null;
+    console.log("API Call:", query);
+    const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
     }
-
-    const shape = await apiCall(`act=getRouteShape&p1=${routeCode}`);
-
-    if (!Array.isArray(shape) || shape.length === 0) {
-      console.log("ℹ️ No route shape available for this route");
-      return;
+    
+    const data = await res.json();
+    console.log("API Response:", data);
+    
+    if (data.error) {
+      throw new Error(data.error);
     }
-
-    const points = shape
-      .map(p => [
-        parseFloat(p.CS_LAT || p.lat),
-        parseFloat(p.CS_LNG || p.lng)
-      ])
-      .filter(p => !isNaN(p[0]) && !isNaN(p[1]));
-
-    if (points.length < 2) {
-      console.log("ℹ️ Not enough points for polyline");
-      return;
-    }
-
-    routePolyline = L.polyline(points, {
-      color: "#2563eb",
-      weight: 5,
-      opacity: 0.85
-    }).addTo(map);
-
-    map.fitBounds(routePolyline.getBounds(), { padding: [30, 30] });
-
-    console.log("🟦 Route polyline drawn");
-
+    
+    return data;
   } catch (err) {
-    // 🔥 ΕΔΩ ΕΙΝΑΙ ΤΟ FIX
-    console.log("ℹ️ Route polyline not supported for this line");
-    routePolyline = null;
+    console.error("API Call failed:", err);
+    throw err;
   }
 }
 
-function snapToRoute(latlng, polyline) {
-  if (!polyline) return latlng;
-
-  let closestPoint = latlng;
-  let minDistance = Infinity;
-
-  polyline.getLatLngs().forEach(p => {
-    const d = map.distance(latlng, p);
-    if (d < minDistance) {
-      minDistance = d;
-      closestPoint = p;
-    }
-  });
-
-  return minDistance < 100 ? closestPoint : latlng;
+function setStatus(message, isError = false) {
+  const statusEl = document.getElementById("status");
+  if (statusEl) {
+    statusEl.textContent = `Κατάσταση: ${message}`;
+    statusEl.style.color = isError ? "#dc2626" : "#059669";
+  }
 }
 
-/* ================= INIT ================= */
-
+/* ---------- Init ---------- */
 async function init() {
   try {
-    setStatus("Φόρτωση γραμμών…");
-
-    map = L.map("map").setView([37.9838, 23.7275], 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19
-    }).addTo(map);
-
+    setStatus("Φόρτωση γραμμών...");
+    
     const raw = await apiCall("act=webGetLines");
-    const lines = Array.isArray(raw) ? raw : raw.data || [];
-
-    lineSelect.innerHTML = `<option value="">-- Επιλέξτε Γραμμή --</option>`;
-
-    lines
-      .sort((a, b) => (parseInt(a.LineID) || 0) - (parseInt(b.LineID) || 0))
-      .forEach(l => {
-        const o = document.createElement("option");
-        o.value = l.LineCode;
-        o.textContent = `${l.LineID || ""} - ${decodeGreek(l.LineDescr)}`;
-        lineSelect.appendChild(o);
-      });
-
+    const lines = Array.isArray(raw) ? raw : (raw.data || []);
+    
+    if (!lines.length) {
+      throw new Error("Δεν βρέθηκαν γραμμές");
+    }
+    
+    const lineSelect = document.getElementById("lineSelect");
+    lineSelect.innerHTML = '<option value="">-- Επιλέξτε Γραμμή --</option>';
+    
+    lines.sort((a, b) => {
+      const aNum = parseInt(a.LineID) || 0;
+      const bNum = parseInt(b.LineID) || 0;
+      return aNum - bNum;
+    });
+    
+    lines.forEach(line => {
+      const option = document.createElement("option");
+      option.value = line.LineCode;
+      
+      const lineID = line.LineID || "";
+      const lineDescr = decodeGreek(line.LineDescr) || line.LineDescr || "";
+      option.textContent = lineID ? `${lineID} - ${lineDescr}` : lineDescr;
+      
+      lineSelect.appendChild(option);
+    });
+    
     lineSelect.disabled = false;
     lineSelect.onchange = loadDirections;
-    refresh.onclick = updateETA;
-
-    setStatus("Έτοιμο");
-  } catch (e) {
-    console.error(e);
-    setStatus("Σφάλμα", true);
+    
+    document.getElementById("refresh").onclick = updateETA;
+    
+    map = L.map("map").setView([37.9838, 23.7275], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+    
+    setStatus("Έτοιμο - Επιλέξτε γραμμή");
+    
+  } catch (err) {
+    console.error("Init error:", err);
+    setStatus("Αποτυχία φόρτωσης - Δοκιμάστε ξανά", true);
+    alert("Σφάλμα: " + err.message);
   }
 }
 
-/* ================= DIRECTIONS ================= */
-
+/* ---------- Directions ---------- */
 async function loadDirections() {
-  lastEtaSignature = null;
-  clearAutoRefresh();
-  clearStops();
-
-  const lineCode = lineSelect.value;
-  if (!lineCode) return;
-
+  const lineCode = document.getElementById("lineSelect").value;
+  
+  const dirSelect = document.getElementById("dirSelect");
+  const stopSelect = document.getElementById("stopSelect");
+  const refreshBtn = document.getElementById("refresh");
+  
+  if (!lineCode) {
+    dirSelect.disabled = true;
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    dirSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση --</option>';
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Στάση --</option>';
+    return;
+  }
+  
   try {
-    setStatus("Φόρτωση κατευθύνσεων…");
+    setStatus("Φόρτωση κατευθύνσεων...");
+    
+    dirSelect.innerHTML = '<option value="">Φόρτωση...</option>';
+    dirSelect.disabled = true;
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση πρώτα --</option>';
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    
+    console.log("Loading routes for line:", lineCode);
     const routes = await apiCall(`act=getRoutesForLine&p1=${lineCode}`);
-
-    dirSelect.innerHTML = `<option value="">-- Επιλέξτε Κατεύθυνση --</option>`;
-    routes.forEach(r => {
-      const o = document.createElement("option");
-      o.value = r.route_code || r.RouteCode;
-      o.textContent = decodeGreek(r.route_descr || r.RouteDescr);
-      dirSelect.appendChild(o);
+    
+    console.log("Routes received:", routes);
+    
+    if (!routes || routes.length === 0) {
+      throw new Error("Δεν βρέθηκαν κατευθύνσεις για αυτή τη γραμμή");
+    }
+    
+    dirSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση --</option>';
+    
+    routes.forEach(route => {
+      const option = document.createElement("option");
+      // ✅ FIXED: Use route_code instead of RouteCode
+      option.value = route.route_code || route.RouteCode;
+      // ✅ FIXED: Use route_descr instead of RouteDescr
+      const routeDescr = decodeGreek(route.route_descr || route.RouteDescr) || "Άγνωστη κατεύθυνση";
+      option.textContent = routeDescr;
+      dirSelect.appendChild(option);
     });
-
+    
     dirSelect.disabled = false;
     dirSelect.onchange = loadStops;
-  } catch {
-    alert("Σφάλμα κατευθύνσεων");
+    
+    setStatus("Επιλέξτε κατεύθυνση");
+    
+  } catch (err) {
+    console.error("Load directions error:", err);
+    dirSelect.innerHTML = '<option value="">Σφάλμα φόρτωσης</option>';
+    dirSelect.disabled = true;
+    setStatus("Αποτυχία φόρτωσης κατευθύνσεων", true);
+    alert("Σφάλμα κατευθύνσεων: " + err.message);
   }
 }
 
-/* ================= STOPS ================= */
-
+/* ---------- Stops ---------- */
 async function loadStops() {
-  lastEtaSignature = null;
-  clearAutoRefresh();
-  clearStops();
-
-  const routeCode = dirSelect.value;
-  if (!routeCode) return;
-
-  await drawRoutePolyline(routeCode);
-
+  const routeCode = document.getElementById("dirSelect").value;
+  const stopSelect = document.getElementById("stopSelect");
+  const refreshBtn = document.getElementById("refresh");
+  
+  if (!routeCode) {
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Κατεύθυνση πρώτα --</option>';
+    return;
+  }
+  
   try {
-    setStatus("Φόρτωση στάσεων…");
+    setStatus("Φόρτωση στάσεων...");
+    
+    stopSelect.innerHTML = '<option value="">Φόρτωση...</option>';
+    stopSelect.disabled = true;
+    refreshBtn.disabled = true;
+    
+    console.log("Loading stops for route:", routeCode);
     const stops = await apiCall(`act=getStopsForRoute&p1=${routeCode}`);
-
-    stopSelect.innerHTML = `<option value="">-- Επιλέξτε Στάση --</option>`;
-
-    stops.forEach(s => {
-      const code = s.stop_code || s.StopCode;
-      const name = decodeGreek(s.stop_descr || s.StopDescr);
-
-      const o = document.createElement("option");
-      o.value = code;
-      o.textContent = name;
-      stopSelect.appendChild(o);
-
-      addStopMarker(code, name, s.StopLat || s.lat, s.StopLng || s.lng);
+    
+    console.log("Stops received:", stops);
+    
+    if (!stops || stops.length === 0) {
+      throw new Error("Δεν βρέθηκαν στάσεις");
+    }
+    
+    stopSelect.innerHTML = '<option value="">-- Επιλέξτε Στάση --</option>';
+    
+    stops.forEach(stop => {
+      const option = document.createElement("option");
+      // ✅ FIXED: Handle both naming conventions
+      option.value = stop.stop_code || stop.StopCode;
+      const stopDescr = decodeGreek(stop.stop_descr || stop.StopDescr) || "Άγνωστη στάση";
+      option.textContent = stopDescr;
+      stopSelect.appendChild(option);
     });
-
+    
     stopSelect.disabled = false;
-    startAutoRefresh();
-    locateNearestStop(stops);
-
+    refreshBtn.disabled = false;
+    
     setStatus("Επιλέξτε στάση");
-  } catch {
-    alert("Σφάλμα στάσεων");
+    
+  } catch (err) {
+    console.error("Load stops error:", err);
+    stopSelect.innerHTML = '<option value="">Σφάλμα φόρτωσης</option>';
+    stopSelect.disabled = true;
+    setStatus("Αποτυχία φόρτωσης στάσεων", true);
+    alert("Σφάλμα στάσεων: " + err.message);
   }
 }
 
-/* ================= STOPS MAP ================= */
-
-function addStopMarker(code, name, lat, lng) {
-  if (!lat || !lng) return;
-
-  const m = L.circleMarker([lat, lng], {
-    radius: 6,
-    color: "#2563eb"
-  }).addTo(map);
-
-  m.on("click", () => {
-    stopSelect.value = code;
-    setTimeout(updateETA, 0);
-  });
-
-  m.bindPopup(`📍 ${name}`);
-  stopMarkers.push(m);
+/* ---------- ETA & Bus Location ---------- */
+async function updateETA() {
+  const stopCode = document.getElementById("stopSelect").value;
+  
+  if (!stopCode) {
+    alert("Παρακαλώ επιλέξτε στάση πρώτα");
+    return;
+  }
+  
+  try {
+    setStatus("Ανανέωση δεδομένων...");
+    
+    console.log("Getting arrivals for stop:", stopCode);
+    const arrivals = await apiCall(`act=getStopArrivals&p1=${stopCode}`);
+    
+    console.log("Arrivals received:", arrivals);
+    
+    const etaEl = document.getElementById("eta");
+    
+    if (Array.isArray(arrivals) && arrivals.length > 0) {
+      const eta = arrivals[0].btime2 || arrivals[0].btime || "N/A";
+      etaEl.textContent = `⏱️ ETA: ${eta} λεπτά`;
+    } else {
+      etaEl.textContent = "⏱️ ETA: Δεν υπάρχουν δεδομένα";
+    }
+    
+    // Get bus location
+    const routeCode = document.getElementById("dirSelect").value;
+    
+    if (routeCode) {
+      try {
+        console.log("Getting bus location for route:", routeCode);
+        const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
+        
+        console.log("Bus locations received:", buses);
+        
+        if (Array.isArray(buses) && buses.length > 0) {
+          const bus = buses[0];
+          
+          // ✅ FIXED: Handle both naming conventions
+          const lat = parseFloat(bus.CS_LAT || bus.lat);
+          const lng = parseFloat(bus.CS_LNG || bus.lng);
+          
+          if (!isNaN(lat) && !isNaN(lng)) {
+            if (!busMarker) {
+              busMarker = L.marker([lat, lng], {
+                icon: L.divIcon({
+                  className: 'bus-marker',
+                  html: '<div style="font-size: 24px;">🚌</div>',
+                  iconSize: [30, 30]
+                })
+              }).addTo(map);
+            } else {
+              busMarker.setLatLng([lat, lng]);
+            }
+            
+            map.setView([lat, lng], 15);
+            console.log("Bus marker placed at:", lat, lng);
+          }
+        } else {
+          console.log("No bus location data available");
+        }
+      } catch (busErr) {
+        console.log("Bus location not available:", busErr);
+      }
+    }
+    
+    setStatus("Ενημερώθηκε επιτυχώς");
+    
+  } catch (err) {
+    console.error("Update ETA error:", err);
+    setStatus("Αποτυχία ανανέωσης", true);
+    alert("Σφάλμα ανανέωσης: " + err.message);
+  }
 }
 
-function clearStops() {
-  stopMarkers.forEach(m => map.removeLayer(m));
-  stopMarkers = [];
+/* ---------- Mobile Safari Fix ---------- */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
 }
 
-/* ================= NEAREST STOP ================= */
-
-function locateNearestStop(stops) {
-  if (!navigator.geolocation || !window.isSecureContext) return;
-
-  navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude, longitude } = pos.coords;
-
-    let nearest = null;
-    let min = Infinity;
-
-    stops.forEach(s => {
-      const lat = s.StopLat || s.lat;
-      const lng = s.StopLng || s.lng;
-      if (!lat || !lng) return;
-
-      const d = haversine(latitude, longitude, lat, lng);
-      if (d < min) {
-        min = d;
-        nearest = s;
+function initApp() {
+  document.querySelectorAll("select").forEach(sel => {
+    sel.addEventListener("focus", () => {
+      if (map) {
+        map.dragging.disable();
+        map.touchZoom.disable();
+        map.scrollWheelZoom.disable();
       }
     });
-
-    if (nearest) {
-      stopSelect.value = nearest.stop_code || nearest.StopCode;
-      updateETA();
-    }
+    
+    sel.addEventListener("blur", () => {
+      if (map) {
+        map.dragging.enable();
+        map.touchZoom.enable();
+        map.scrollWheelZoom.enable();
+      }
+    });
   });
+  
+  init();
 }
-
-/* ================= ETA & BUS ================= */
-
-async function updateETA() {
-  if (etaRequestInProgress) return;
-  etaRequestInProgress = true;
-
-  try {
-    const stopCode = stopSelect.value;
-    if (!stopCode) return;
-
-    setStatus("Ανανέωση δεδομένων…");
-
-    const rawArrivals = await apiCall(`act=getStopArrivals&p1=${stopCode}`);
-    const arrivals = Array.isArray(rawArrivals) ? rawArrivals : [];
-
-    const newSignature = buildEtaSignature(arrivals);
-    if (newSignature === lastEtaSignature) {
-      setStatus("Χωρίς αλλαγή");
-      return;
-    }
-
-    lastEtaSignature = newSignature;
-
-    eta.textContent = arrivals.length
-      ? "⏱️ " +
-        arrivals
-          .slice(0, 3)
-          .map(a => `${a.route_code || "—"}: ${a.btime2}’`)
-          .join(" | ")
-      : "⏱️ Δεν υπάρχουν δεδομένα";
-
-    const routeCode = dirSelect.value;
-    if (!routeCode) return;
-
-    const buses = await apiCall(`act=getBusLocation&p1=${routeCode}`);
-    if (!Array.isArray(buses) || !buses.length) return;
-
-    const b = buses[0];
-
-    const rawLatLng = L.latLng(
-      parseFloat(b.CS_LAT || b.lat),
-      parseFloat(b.CS_LNG || b.lng)
-    );
-
-    const snapped = snapToRoute(rawLatLng, routePolyline);
-
-    if (!busMarker) {
-      busMarker = L.marker(snapped, {
-        icon: L.divIcon({
-          html: "🚌",
-          iconSize: [28, 28],
-          className: ""
-        })
-      }).addTo(map);
-    } else {
-      busMarker.setLatLng(snapped);
-    }
-
-    setStatus("Ενημερώθηκε");
-  } catch (e) {
-    console.error(e);
-    setStatus("Σφάλμα ETA", true);
-  } finally {
-    etaRequestInProgress = false;
-  }
-}
-
-/* ================= AUTO REFRESH ================= */
-
-function startAutoRefresh() {
-  clearAutoRefresh();
-  autoRefreshTimer = setInterval(updateETA, 30000);
-}
-
-function clearAutoRefresh() {
-  if (autoRefreshTimer) {
-    clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
-  }
-}
-
-/* ================= BOOT ================= */
-
-document.addEventListener("DOMContentLoaded", init);
