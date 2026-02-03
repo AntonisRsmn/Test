@@ -1,122 +1,297 @@
+:root {
+  /* Backgrounds */
+  --bg-main: #0b0b0b;
+  --bg-surface: #111;
+  --bg-surface-soft: #0f0f0f;
+
+  /* Text */
+  --text-main: #f5f5f5;
+  --text-muted: #9ca3af;
+
+  /* Accents */
+  --accent: #3b82f6;      /* blue-500 */
+  --accent-soft: #1e3a8a;
+  --danger: #ef4444;
+
+  /* UI */
+  --radius: 14px;
+  --radius-sm: 10px;
+  --border: #1f2933;
+
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- RESET ---------- */
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background: #f1f5f9;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: var(--bg-main);
+  color: var(--text-main);
 }
 
-header {
-  padding: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
+/* ---------- HEADER ---------- */
+.app-header {
+  padding: 20px 16px 14px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-header h1 {
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.logo {
+  font-size: 1.6rem;
+}
+
+.app-header h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
+  font-weight: 700;
 }
 
+.subtitle {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ---------- PANEL ---------- */
+.panel {
+  margin: 12px;
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+/* ---------- CONTROLS ---------- */
 .controls {
-  position: relative;
-  z-index: 1000;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding: 16px;
-  background: #ffffff;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  border-bottom: 1px solid var(--border);
 }
 
 .controls select,
 .controls button {
-  padding: 12px;
-  font-size: 16px;
-  border-radius: 8px;
-  border: 2px solid #e2e8f0;
-  background: white;
-  transition: all 0.2s;
+  padding: 14px;
+  font-size: 15px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #000;
+  color: var(--text-main);
 }
 
 .controls select:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--accent);
 }
 
-.controls select:disabled {
-  background: #f8fafc;
-  color: #94a3b8;
-  cursor: not-allowed;
-}
-
+/* ---------- BUTTON ---------- */
 .controls button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
+  background: var(--accent);
+  color: #fff;
   font-weight: 600;
   cursor: pointer;
+  border: none;
 }
 
 .controls button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  filter: brightness(1.05);
 }
 
 .controls button:disabled {
-  background: #cbd5e1;
+  background: #1f2933;
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 
+/* ---------- INFO ---------- */
 .info {
   padding: 16px;
-  background: #ffffff;
-  z-index: 900;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--bg-surface-soft);
 }
 
-.info div {
-  margin: 8px 0;
-  font-size: 1rem;
-  color: #334155;
+.eta-display {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
+/* .eta-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.eta-normal {
+  background: var(--accent);
+  color: #fff;
+}
+
+.eta-urgent {
+  background: var(--danger);
+  color: #fff;
+} */
+
+.status-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ---------- ETA CARD ---------- */
+#eta {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.eta-card {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  text-align: center;
+  transition: all 0.25s ease;
+}
+
+/* ---------- ROUTE ROW ---------- */
+.eta-route {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+}
+
+.eta-line {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.eta-direction {
+  opacity: 0.85;
+}
+
+/* ---------- TIME ---------- */
+.eta-time {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* ---------- STATES ---------- */
+.eta-normal {
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+  color: #ffffff;
+}
+
+.eta-urgent {
+  background: linear-gradient(135deg, var(--danger), #b91c1c);
+  color: #ffffff;
+  animation: pulse-urgent 1.2s infinite;
+}
+
+/* ---------- URGENT PULSE ---------- */
+@keyframes pulse-urgent {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+
+/* ---------- ETA CONTAINER ---------- */
+#eta {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+/* ---------- URGENT PULSE ---------- */
+@keyframes pulse-urgent {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+
+/* ---------- MAP ---------- */
 #map {
-  height: 50vh;
-  margin: 0;
-  z-index: 1;
+  height: 55vh;
+  width: 100%;
+  background: #000;
 }
 
+/* ---------- BUS ---------- */
+.bus-icon {
+  font-size: 26px;
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.8));
+}
+
+/* ---------- LEAFLET POPUP ---------- */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+}
+
+/* ---------- DESKTOP ---------- */
 @media (min-width: 768px) {
-  #map {
-    height: 60vh;
-  }
-  
   .controls {
     flex-direction: row;
     flex-wrap: wrap;
   }
-  
+
   .controls select {
     flex: 1;
-    min-width: 200px;
+    min-width: 180px;
   }
-  
+
   .controls button {
-    flex: 0 0 auto;
     min-width: 140px;
   }
+
+  #map {
+    height: 65vh;
+  }
 }
 
-/* Loading animation */
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+/* ===== ETA BOX ===== */
+.eta-box {
+  margin: 0 auto;
+  max-width: 320px;
+  text-align: center;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--border);
 }
 
-.loading {
-  animation: pulse 1.5s ease-in-out infinite;
+.eta-box.urgent {
+  background: linear-gradient(135deg, #7f1d1d, #450a0a);
+}
+
+.eta-line {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.eta-minutes {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #fff;
 }

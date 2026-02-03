@@ -1,34 +1,51 @@
 <!DOCTYPE html>
 <html lang="el">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <title>Live Τηλεματική ΟΑΣΑ</title>
-  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <meta name="theme-color" content="#0b0b0b" />
+
+  <link rel="stylesheet" href="styles.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
 </head>
+
 <body>
-  <header>
-    <h1>🚌 Live Τηλεματική ΟΑΣΑ</h1>
+  <header class="app-header">
+    <div class="title-row">
+      <span class="logo">🚌</span>
+      <h1>Live Τηλεματική ΟΑΣΑ</h1>
+    </div>
+    <p class="subtitle">Πραγματικός χρόνος · Στάσεις · Διαδρομές</p>
   </header>
 
-  <section class="controls">
-    <select id="lineSelect" disabled>
-      <option>Φόρτωση γραμμών...</option>
-    </select>
-    <select id="dirSelect" disabled>
-      <option>Επιλέξτε γραμμή πρώτα</option>
-    </select>
-    <select id="stopSelect" disabled>
-      <option>Επιλέξτε κατεύθυνση πρώτα</option>
-    </select>
-    <button id="refresh" disabled>Ανανέωση</button>
-  </section>
+  <main class="panel">
+    <section class="controls">
+      <select id="lineSelect" disabled>
+        <option>Φόρτωση γραμμών…</option>
+      </select>
 
-  <section class="info">
-    <div id="eta">⏱️ ETA: —</div>
-    <div id="status">Κατάσταση: Φόρτωση...</div>
-  </section>
+      <select id="dirSelect" disabled>
+        <option>Επιλέξτε γραμμή πρώτα</option>
+      </select>
+
+      <select id="stopSelect" disabled>
+        <option>Επιλέξτε κατεύθυνση πρώτα</option>
+      </select>
+
+      <button id="refresh" disabled>Ανανέωση</button>
+    </section>
+
+    <section class="info">
+      <div id="eta" class="eta-display">—</div>
+      <!-- <div id="status" class="status-text">Φόρτωση…</div> -->
+    </section>
+  </main>
 
   <div id="map"></div>
 
