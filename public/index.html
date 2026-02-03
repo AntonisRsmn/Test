@@ -1,129 +1,55 @@
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-const app = express();
+  <title>Live Τηλεματική ΟΑΣΑ</title>
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+  <meta name="theme-color" content="#0b0b0b" />
 
-/* ---------- CORS ---------- */
-app.use(cors({ origin: "*", methods: ["GET"] }));
+  <link rel="stylesheet" href="styles.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+</head>
 
-/* ---------- SERVE STATIC FILES ---------- */
-app.use(express.static(path.join(__dirname, "public")));
+<body>
+  <header class="app-header">
+    <div class="title-row">
+      <span class="logo">🚌</span>
+      <h1>Live Τηλεματική ΟΑΣΑ</h1>
+    </div>
+    <p class="subtitle">Πραγματικός χρόνος · Στάσεις · Διαδρομές</p>
+  </header>
 
-/* ---------- CONFIG ---------- */
-const OASA_BASE = "https://telematics.oasa.gr/api/";
-const PORT = process.env.PORT || 4000;
+  <main class="panel">
+    <section class="controls">
+      <select id="lineSelect" disabled>
+        <option>Φόρτωση γραμμών…</option>
+      </select>
 
-/* ---------- CACHE (LINES) ---------- */
-let cachedLines = null;
-let cacheTimestamp = 0;
-const CACHE_DURATION = 60 * 60 * 1000;
+      <select id="dirSelect" disabled>
+        <option>Επιλέξτε γραμμή πρώτα</option>
+      </select>
 
-/* ---------- HELPERS ---------- */
-async function safeFetch(url, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 OASA-Proxy" },
-    });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
+      <select id="stopSelect" disabled>
+        <option>Επιλέξτε κατεύθυνση πρώτα</option>
+      </select>
 
-/* ---------- API ---------- */
-app.get("/api", async (req, res) => {
-  const q = req.query.q;
-  if (!q) return res.status(400).json({ error: "Missing q" });
+      <button id="refresh" disabled>Ανανέωση</button>
+    </section>
 
-  /* ---------- LINES ---------- */
-  if (q === "act=webGetLines") {
-    if (cachedLines && Date.now() - cacheTimestamp < CACHE_DURATION) {
-      return res.json(cachedLines);
-    }
-    try {
-      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000);
-      cachedLines = data;
-      cacheTimestamp = Date.now();
-      console.log(`✅ Lines cached (${data.length})`);
-      return res.json(data);
-    } catch {
-      if (cachedLines) return res.json(cachedLines);
-      return res.status(503).json({ error: "Lines unavailable" });
-    }
-  }
+    <section class="info">
+      <div id="eta" class="eta-display">—</div>
+      <!-- <div id="status" class="status-text">Φόρτωση…</div> -->
+    </section>
+  </main>
 
-  /* ---------- ROUTE SHAPE (SAFE) ---------- */
-  if (q.includes("act=getRouteShape")) {
-    const match = q.match(/p1=(\d+)/);
-    const routeCode = match?.[1];
-    try {
-      const data = await safeFetch(
-        `${OASA_BASE}?act=getRouteShape&p1=${routeCode}`,
-        20000
-      );
-      if (!Array.isArray(data) || data.length === 0) {
-        throw new Error("Empty shape");
-      }
-      return res.json({
-        ok: true,
-        fallback: false,
-        points: data,
-      });
-    } catch (e) {
-      return res.json({
-        ok: false,
-        fallback: true,
-        points: [],
-      });
-    }
-  }
+  <div id="map"></div>
 
-  /* ---------- STOPS ---------- */
-  if (q.includes("act=getStopsForRoute")) {
-    const match = q.match(/p1=(\d+)/);
-    const routeCode = match?.[1];
-    const endpoints = [
-      `?act=webGetStops&p1=${routeCode}`,
-      `?act=getStopsForRoute&p1=${routeCode}`,
-      `?act=webGetStopsForRoute&p1=${routeCode}`,
-      `?act=getStops&p1=${routeCode}`,
-    ];
-    for (const ep of endpoints) {
-      try {
-        const data = await safeFetch(`${OASA_BASE}${ep}`);
-        if (Array.isArray(data) && data.length > 0) {
-          return res.json(data);
-        }
-      } catch {}
-    }
-    return res.status(503).json({ error: "Stops unavailable" });
-  }
-
-  /* ---------- GENERIC PROXY ---------- */
-  try {
-    const data = await safeFetch(`${OASA_BASE}?${q}`);
-    return res.json(data);
-  } catch (err) {
-    return res.status(502).json({
-      error: "OASA API failed",
-      details: err.message,
-    });
-  }
-});
-
-/* ---------- START ---------- */
-app.listen(PORT, () => {
-  console.log(`🚀 Proxy server running on port ${PORT}`);
-});
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

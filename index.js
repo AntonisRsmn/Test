@@ -6,7 +6,6 @@ import { fileURLToPath } from "url";
 
 const app = express();
 
-// Get __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -35,7 +34,7 @@ async function safeFetch(url, timeoutMs = 15000) {
       headers: { "User-Agent": "Mozilla/5.0 OASA-Proxy" },
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`); // FIXED
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
     clearTimeout(timeout);
@@ -43,22 +42,10 @@ async function safeFetch(url, timeoutMs = 15000) {
   }
 }
 
-/* ---------- HEALTH ---------- */
-app.get("/health", (req, res) => { // Changed from "/" to "/health"
-  res.json({
-    status: "running",
-    cachedLines: cachedLines ? cachedLines.length : 0,
-    cacheAge: cacheTimestamp
-      ? Math.floor((Date.now() - cacheTimestamp) / 1000)
-      : null,
-  });
-});
-
 /* ---------- API ---------- */
 app.get("/api", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "Missing q" });
-  // console.log("📡 API:", q);
 
   /* ---------- LINES ---------- */
   if (q === "act=webGetLines") {
@@ -66,10 +53,10 @@ app.get("/api", async (req, res) => {
       return res.json(cachedLines);
     }
     try {
-      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000); // FIXED
+      const data = await safeFetch(`${OASA_BASE}?act=webGetLines`, 20000);
       cachedLines = data;
       cacheTimestamp = Date.now();
-      console.log(`✅ Lines cached (${data.length})`); // FIXED
+      console.log(`✅ Lines cached (${data.length})`);
       return res.json(data);
     } catch {
       if (cachedLines) return res.json(cachedLines);
@@ -81,7 +68,6 @@ app.get("/api", async (req, res) => {
   if (q.includes("act=getRouteShape")) {
     const match = q.match(/p1=(\d+)/);
     const routeCode = match?.[1];
-    // console.log("🛣️ Route shape request:", routeCode);
     try {
       const data = await safeFetch(
         `${OASA_BASE}?act=getRouteShape&p1=${routeCode}`,
@@ -96,7 +82,6 @@ app.get("/api", async (req, res) => {
         points: data,
       });
     } catch (e) {
-      // console.warn("⚠️ Route shape failed → fallback");
       return res.json({
         ok: false,
         fallback: true,
@@ -117,7 +102,7 @@ app.get("/api", async (req, res) => {
     ];
     for (const ep of endpoints) {
       try {
-        const data = await safeFetch(`${OASA_BASE}${ep}`); // FIXED
+        const data = await safeFetch(`${OASA_BASE}${ep}`);
         if (Array.isArray(data) && data.length > 0) {
           return res.json(data);
         }
@@ -128,7 +113,7 @@ app.get("/api", async (req, res) => {
 
   /* ---------- GENERIC PROXY ---------- */
   try {
-    const data = await safeFetch(`${OASA_BASE}?${q}`); // FIXED
+    const data = await safeFetch(`${OASA_BASE}?${q}`);
     return res.json(data);
   } catch (err) {
     return res.status(502).json({
@@ -138,12 +123,7 @@ app.get("/api", async (req, res) => {
   }
 });
 
-/* ---------- SERVE INDEX.HTML FOR ALL OTHER ROUTES ---------- */
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
 /* ---------- START ---------- */
 app.listen(PORT, () => {
-  console.log(`🚀 Proxy server running on port ${PORT}`); // FIXED
+  console.log(`🚀 Proxy server running on port ${PORT}`);
 });
