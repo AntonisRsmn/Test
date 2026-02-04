@@ -1,4 +1,6 @@
-const PROXY_BASE = "https://telematics.oasa.gr/api/";
+// const PROXY_BASE = "https://telematics.oasa.gr/api/";
+
+const PROXY_BASE = "/api";
 const ROUTE_COLOR = "#3b82f6";
 
 let map;
