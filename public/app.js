@@ -237,6 +237,7 @@ async function updateBuses() {
 }
 
 /* ================= ETA ================= */
+const BUS_SPEED_MPS = 5; // ~18 km/h
 
 async function updateETA() {
   const lineSelect = document.getElementById("lineSelect");
@@ -247,20 +248,39 @@ async function updateETA() {
   if (!stopSelect.value || !dirSelect.value) return;
 
   try {
+    // 1️⃣ Πάρε λεωφορεία γραμμής
     const buses = await apiCall(`act=getBusLocation&p1=${dirSelect.value}`);
-    const hasActiveBus = Array.isArray(buses) && buses.length > 0;
+    const hasBus = Array.isArray(buses) && buses.length > 0;
 
+    // ❌ Αν ΔΕΝ υπάρχει κανένα λεωφορείο → τέλος
+    if (!hasBus) {
+      etaEl.innerHTML = `
+        <div class="eta-card eta-normal">
+          <div class="eta-route">
+            ${lineSelect.selectedOptions[0].text}
+          </div>
+          <div class="eta-time">
+            Το δρομολόγιο δεν έχει ξεκινήσει ακόμη
+          </div>
+        </div>
+      `;
+      busMarkers.forEach(b => map.removeLayer(b));
+      busMarkers = [];
+      return;
+    }
+
+    // 2️⃣ Πάρε αφίξεις
     const arr = await apiCall(`act=getStopArrivals&p1=${stopSelect.value}`);
 
-    let message = "Το δρομολόγιο δεν έχει ξεκινήσει ακόμη";
+    let message = "Σε εξέλιξη – χωρίς εκτίμηση άφιξης";
     let urgent = false;
 
-    if (hasActiveBus && Array.isArray(arr) && arr.length) {
-      const eta = parseInt(arr[0].btime2 || arr[0].btime, 10);
+    if (Array.isArray(arr) && arr.length) {
+      const rawEta = arr[0].btime2 || arr[0].btime;
+      const eta = parseInt(rawEta, 10);
 
-      if (eta <= 0) {
-        message = "Μόλις πέρασε";
-      } else {
+      // ✅ ΜΟΝΟ ρεαλιστικά ETAs
+      if (!isNaN(eta) && eta > 0 && eta <= 120) {
         message = `Άφιξη σε ${eta} λεπτά`;
         urgent = eta <= 5;
       }
@@ -275,11 +295,8 @@ async function updateETA() {
       </div>
     `;
 
-    if (hasActiveBus) updateBuses();
-    else {
-      busMarkers.forEach(b => map.removeLayer(b));
-      busMarkers = [];
-    }
+    // 3️⃣ Δείξε buses (αφού ξέρουμε ότι υπάρχουν)
+    updateBuses();
 
   } catch {
     etaEl.innerHTML = `
@@ -288,14 +305,14 @@ async function updateETA() {
       </div>
     `;
   }
-}
+} 
 
 /* ================= AUTO REFRESH ================= */
 
 function startAutoRefresh() {
   stopAutoRefresh();
   updateETA();
-  etaInterval = setInterval(updateETA, 20000);
+  etaInterval = setInterval(updateETA, 15000);
 }
 
 document.addEventListener("DOMContentLoaded", init);

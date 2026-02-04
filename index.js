@@ -14,7 +14,7 @@ app.use(cors({ origin: "*", methods: ["GET"] }));
 
 /* ---------- CONFIG ---------- */
 const OASA_BASE = "https://telematics.oasa.gr/api/";
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 3000;
 
 /* ---------- CACHE (LINES) ---------- */
 let cachedLines = null;
