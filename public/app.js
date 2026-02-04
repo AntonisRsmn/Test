@@ -1,4 +1,4 @@
-const PROXY_BASE = "/api";
+const PROXY_BASE = "https://telematics.oasa.gr/api/";
 const ROUTE_COLOR = "#3b82f6";
 
 let map;
@@ -21,10 +21,9 @@ function decodeGreek(text) {
 }
 
 async function apiCall(query) {
-  const res = await fetch(`${PROXY_BASE}?q=${encodeURIComponent(query)}`);
-  const data = await res.json();
-  if (!res.ok || data?.error) throw new Error("API error");
-  return data;
+  const res = await fetch(`${PROXY_BASE}?${query}`);
+  if (!res.ok) throw new Error("OASA error");
+  return res.json();
 }
 
 function clearMap() {
